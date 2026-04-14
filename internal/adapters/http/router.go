@@ -2,7 +2,9 @@ package http
 
 import (
 	"fmt"
+	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 
@@ -26,6 +28,14 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 
 	router := gin.New()
 	router.Use(gin.Recovery())
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:5000", "http://localhost:5001", "http://localhost:8081", "https://fitbrother.app"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
 
 	passwordSvc, err := crypto.NewPasswordService(cfg.Crypto.PasswordPepper)
 	if err != nil {
