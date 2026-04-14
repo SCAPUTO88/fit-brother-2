@@ -50,7 +50,7 @@ func (c *CreateStudentUseCase) Execute(ctx context.Context, input CreateStudentI
 	// Note que precisamos de um UserID fictício temporario pois o User só ganha ID ao persistir.
 	// Porem, como somos UUID based, nós mesmos geramos o ID do User de antemão!
 	newUserID := uuid.New()
-	
+
 	studentDomain, err := domainS.NewStudent(newUserID, input.CPF)
 	if err != nil {
 		return nil, err // Ex: Erro de 11 dígitos, etc.
@@ -69,7 +69,7 @@ func (c *CreateStudentUseCase) Execute(ctx context.Context, input CreateStudentI
 		return nil, errors.New("falha interna ao processar senha")
 	}
 
-	// 5. Configurar Domínio do Usuário 
+	// 5. Configurar Domínio do Usuário
 	userDomain := &domainU.User{
 		ID:           newUserID,
 		Email:        input.Email,

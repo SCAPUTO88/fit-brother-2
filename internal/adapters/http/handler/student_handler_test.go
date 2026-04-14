@@ -25,21 +25,39 @@ import (
 
 // --- Mocks simplificados ---
 type HTTPMockUserRepo struct{ mock.Mock }
-func (m *HTTPMockUserRepo) Create(ctx context.Context, u *domainU.User) error                                { return nil }
-func (m *HTTPMockUserRepo) GetByID(ctx context.Context, id uuid.UUID) (*domainU.User, error)                 { return nil, nil }
-func (m *HTTPMockUserRepo) GetByEmail(ctx context.Context, email string) (*domainU.User, error)              { return nil, nil }
-func (m *HTTPMockUserRepo) Update(ctx context.Context, u *domainU.User) error                                { return nil }
-func (m *HTTPMockUserRepo) CreateRefreshToken(ctx context.Context, rt *domainU.RefreshToken) error           { return nil }
-func (m *HTTPMockUserRepo) GetRefreshTokenByHash(ctx context.Context, hash string) (*domainU.RefreshToken, error) { return nil, nil }
-func (m *HTTPMockUserRepo) RevokeRefreshToken(ctx context.Context, id uuid.UUID) error                       { return nil }
-func (m *HTTPMockUserRepo) RevokeTokenFamily(ctx context.Context, familyID uuid.UUID) error                  { return nil }
+
+func (m *HTTPMockUserRepo) Create(ctx context.Context, u *domainU.User) error { return nil }
+func (m *HTTPMockUserRepo) GetByID(ctx context.Context, id uuid.UUID) (*domainU.User, error) {
+	return nil, nil
+}
+func (m *HTTPMockUserRepo) GetByEmail(ctx context.Context, email string) (*domainU.User, error) {
+	return nil, nil
+}
+func (m *HTTPMockUserRepo) Update(ctx context.Context, u *domainU.User) error { return nil }
+func (m *HTTPMockUserRepo) CreateRefreshToken(ctx context.Context, rt *domainU.RefreshToken) error {
+	return nil
+}
+func (m *HTTPMockUserRepo) GetRefreshTokenByHash(ctx context.Context, hash string) (*domainU.RefreshToken, error) {
+	return nil, nil
+}
+func (m *HTTPMockUserRepo) RevokeRefreshToken(ctx context.Context, id uuid.UUID) error { return nil }
+func (m *HTTPMockUserRepo) RevokeTokenFamily(ctx context.Context, familyID uuid.UUID) error {
+	return nil
+}
 
 type HTTPMockStudentRepo struct{ mock.Mock }
-func (m *HTTPMockStudentRepo) Create(ctx context.Context, u *domainS.Student) error                          { return nil }
-func (m *HTTPMockStudentRepo) GetByID(ctx context.Context, id uuid.UUID) (*domainS.Student, error)           { return nil, nil }
-func (m *HTTPMockStudentRepo) GetByCPFHash(ctx context.Context, cpf string) (*domainS.Student, error)        { return nil, nil }
-func (m *HTTPMockStudentRepo) Delete(ctx context.Context, id uuid.UUID) error                                { return nil }
-func (m *HTTPMockStudentRepo) SaveBiometric(ctx context.Context, b *domainS.BiometricData) error             { return nil }
+
+func (m *HTTPMockStudentRepo) Create(ctx context.Context, u *domainS.Student) error { return nil }
+func (m *HTTPMockStudentRepo) GetByID(ctx context.Context, id uuid.UUID) (*domainS.Student, error) {
+	return nil, nil
+}
+func (m *HTTPMockStudentRepo) GetByCPFHash(ctx context.Context, cpf string) (*domainS.Student, error) {
+	return nil, nil
+}
+func (m *HTTPMockStudentRepo) Delete(ctx context.Context, id uuid.UUID) error { return nil }
+func (m *HTTPMockStudentRepo) SaveBiometric(ctx context.Context, b *domainS.BiometricData) error {
+	return nil
+}
 
 func TestStudentHandler_Create(t *testing.T) {
 	gin.SetMode(gin.TestMode)

@@ -30,7 +30,7 @@ func NewGetStudentUseCase(
 	}
 }
 
-// Execute recupera um estudante mesclando dados da entidade de Autenticação e 
+// Execute recupera um estudante mesclando dados da entidade de Autenticação e
 // descriptografando o CPF em Tempo Real GCM, consumindo o mínimo de memória temporária.
 func (c *GetStudentUseCase) Execute(ctx context.Context, studentID uuid.UUID) (*StudentDetailOutput, error) {
 
@@ -46,7 +46,7 @@ func (c *GetStudentUseCase) Execute(ctx context.Context, studentID uuid.UUID) (*
 		return nil, errors.New("perfil base corrompido ou inativo")
 	}
 
-	// 3. Descriptografia GCM 
+	// 3. Descriptografia GCM
 	// Usamos o Validation-Binding AAD (O proprio ID é a prova de violação)!
 	clearCPF, err := c.encryptor.Decrypt(stud.CPFEncrypted, []byte(stud.ID.String()))
 	if err != nil {

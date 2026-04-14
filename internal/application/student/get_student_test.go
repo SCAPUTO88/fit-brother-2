@@ -34,7 +34,7 @@ func TestGetStudentUseCase(t *testing.T) {
 
 		// Dado mockado no banco: CPF ENCRIPTADO
 		encryptedVal, _ := encrptSvc.Encrypt("99988877766", []byte(studID.String()))
-		
+
 		mockSRepo.On("GetByID", ctx, studID).Return(&domainS.Student{
 			ID:           studID,
 			UserID:       userID,
@@ -53,7 +53,7 @@ func TestGetStudentUseCase(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, "busca@fit.com", out.Email)
-		
+
 		// MAGIA DA SEGURANÇA: O dado volta desencriptado, mas apenas nesse momento de Request
 		// Não fica mantido em variavel global.
 		assert.Equal(t, "99988877766", out.CPF)

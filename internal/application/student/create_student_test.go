@@ -44,9 +44,13 @@ func (m *MockUserRepo) Update(ctx context.Context, u *domainU.User) error {
 	args := m.Called(ctx, u)
 	return args.Error(0)
 }
-func (m *MockUserRepo) CreateRefreshToken(ctx context.Context, rt *domainU.RefreshToken) error { return nil }
-func (m *MockUserRepo) GetRefreshTokenByHash(ctx context.Context, hash string) (*domainU.RefreshToken, error) { return nil, nil }
-func (m *MockUserRepo) RevokeRefreshToken(ctx context.Context, id uuid.UUID) error { return nil }
+func (m *MockUserRepo) CreateRefreshToken(ctx context.Context, rt *domainU.RefreshToken) error {
+	return nil
+}
+func (m *MockUserRepo) GetRefreshTokenByHash(ctx context.Context, hash string) (*domainU.RefreshToken, error) {
+	return nil, nil
+}
+func (m *MockUserRepo) RevokeRefreshToken(ctx context.Context, id uuid.UUID) error      { return nil }
 func (m *MockUserRepo) RevokeTokenFamily(ctx context.Context, familyID uuid.UUID) error { return nil }
 
 type MockStudentRepo struct {
@@ -75,7 +79,9 @@ func (m *MockStudentRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)
 }
-func (m *MockStudentRepo) SaveBiometric(ctx context.Context, b *domainS.BiometricData) error { return nil }
+func (m *MockStudentRepo) SaveBiometric(ctx context.Context, b *domainS.BiometricData) error {
+	return nil
+}
 
 // --- Test Suite ---
 
@@ -105,7 +111,7 @@ func TestCreateStudentUseCase(t *testing.T) {
 		}
 
 		// Expectations
-		mockURepo.On("GetByEmail", ctx, "test@fit.com").Return((*domainU.User)(nil), nil) // Nao existe email
+		mockURepo.On("GetByEmail", ctx, "test@fit.com").Return((*domainU.User)(nil), nil)     // Nao existe email
 		mockSRepo.On("GetByCPFHash", ctx, mock.Anything).Return((*domainS.Student)(nil), nil) // Nao existe CPF
 
 		// Mock user creation

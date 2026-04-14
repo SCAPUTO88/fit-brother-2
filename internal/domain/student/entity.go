@@ -9,7 +9,7 @@ import (
 )
 
 // Student representa o domínio de um Aluno na nossa aplicação.
-// Aqui na camada de domínio nós retemos o "cleanCPF" em estado transitório 
+// Aqui na camada de domínio nós retemos o "cleanCPF" em estado transitório
 // apenas para trafegar entre HTTP <-> UseCase antes dele ser mascarado e "apagado" com AES.
 type Student struct {
 	ID           uuid.UUID

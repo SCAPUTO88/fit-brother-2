@@ -54,7 +54,7 @@ func TestAnonymizeStudentUseCase(t *testing.T) {
 		mockSRepo.AssertExpectations(t)
 		mockURepo.AssertExpectations(t)
 	})
-	
+
 	t.Run("Falha se não encontrar aluno", func(t *testing.T) {
 		mockURepo := new(MockUserRepo)
 		mockSRepo := new(MockStudentRepo)

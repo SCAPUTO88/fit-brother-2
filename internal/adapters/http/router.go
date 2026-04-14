@@ -57,7 +57,7 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 	loginUC := auth.NewLoginUseCase(userRepo, passwordSvc, jwtSvc, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
 	refreshUC := auth.NewRefreshUseCase(userRepo, jwtSvc, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
 	logoutUC := auth.NewLogoutUseCase(userRepo)
-	
+
 	createStudentUC := student.NewCreateStudentUseCase(userRepo, studentRepo, passwordSvc, aesEncryptor, hashGen)
 	getStudentUC := student.NewGetStudentUseCase(userRepo, studentRepo, aesEncryptor)
 	anonymizeStudentUC := student.NewAnonymizeStudentUseCase(userRepo, studentRepo)
@@ -91,7 +91,6 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 		// protected := v1.Group("")
 		// protected.Use(middleware.RequireAuth(jwtSvc))
 		// Aqui poderíamos ter fichas de Treinadores e outros módulos
-
 
 	}
 

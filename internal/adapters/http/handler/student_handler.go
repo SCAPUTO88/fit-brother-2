@@ -32,7 +32,7 @@ func NewStudentHandler(
 // Por segurança, apenas TRAINERS (ou o proprio admin) deveriam conseguir cadastrar alunos.
 func (h *StudentHandler) RegisterRoutes(router *gin.RouterGroup, auther gin.HandlerFunc) {
 	group := router.Group("/students")
-	
+
 	// Pública
 	group.POST("", h.Create)
 
@@ -48,7 +48,7 @@ func (h *StudentHandler) RegisterRoutes(router *gin.RouterGroup, auther gin.Hand
 
 func (h *StudentHandler) Create(c *gin.Context) {
 	var input student.CreateStudentInput
-	
+
 	// BindJSON fará a checagem das annotations de "binding:required,email,etc"
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "dados inválidos: " + err.Error()})
