@@ -60,7 +60,7 @@ func TestBiometricEntity(t *testing.T) {
 
 		// Medidas: 80kg, 180cm (1.8m). IMC = 80 / (1.8 * 1.8) = ~24.69
 		bio, err := student.NewBiometricRecord(studentID, trainerID, 80.0, 180.0, 15.5)
-		
+
 		require.NoError(t, err)
 		assert.InDelta(t, 24.69, bio.BMI, 0.01) // Margem de erro do float
 	})

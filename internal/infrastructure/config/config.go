@@ -9,8 +9,6 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Config centraliza todas as configurações da aplicação.
-// Os valores são carregados de variáveis de ambiente.
 type Config struct {
 	App      AppConfig
 	Database DatabaseConfig
@@ -61,10 +59,7 @@ type CORSConfig struct {
 	AllowedOrigins string
 }
 
-// Load lê as variáveis de ambiente (e um arquivo .env se presente)
-// e retorna a configuração completa. Retorna erro se algum campo obrigatório estiver ausente.
 func Load() (*Config, error) {
-	// Em desenvolvimento, carrega o .env automaticamente
 	_ = godotenv.Load()
 
 	cfg := &Config{
@@ -134,11 +129,9 @@ func parseDuration(key string, defaultVal time.Duration) time.Duration {
 	if v == "" {
 		return defaultVal
 	}
-	// Tenta primeiro como duração Go (ex: "15m", "7h")
 	if d, err := time.ParseDuration(v); err == nil {
 		return d
 	}
-	// Tenta como minutos inteiros (legado)
 	if mins, err := strconv.Atoi(v); err == nil {
 		return time.Duration(mins) * time.Minute
 	}

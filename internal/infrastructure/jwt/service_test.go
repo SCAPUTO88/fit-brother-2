@@ -66,7 +66,7 @@ func TestJWTService(t *testing.T) {
 
 	t.Run("Falhar com token expirado", func(t *testing.T) {
 		userID := uuid.New()
-		
+
 		// Criar com TTL negativo (expira no passado!)
 		tokenString, err := svc.GenerateAccessToken(userID, "STUDENT", "sid", -1*time.Minute)
 		require.NoError(t, err)
@@ -78,7 +78,7 @@ func TestJWTService(t *testing.T) {
 	})
 
 	t.Run("Falhar ao verificar token de outra fonte (assinatura invalida)", func(t *testing.T) {
-		// Pega um svc mas agora eu gero UM NOVO par de chaves, pra simular um token "falso" ou 
+		// Pega um svc mas agora eu gero UM NOVO par de chaves, pra simular um token "falso" ou
 		// de outro lugar.
 		fakePriv, fakePub := generateTempRSAKeys(t)
 		fakeSvc, _ := jwt.NewService(fakePriv, fakePub, "hacker-issuer")

@@ -32,36 +32,27 @@ func NewRefreshUseCase(
 	}
 }
 
-// Execute lida com O Token Family Rotation.
-// Se um token roubado/já revogado for usado, A FAMÍLIA INTEIRA é revogada (logout forçado).
 func (u *RefreshUseCase) Execute(ctx context.Context, input RefreshInput) (*TokenOutput, error) {
-	// Calcula hash do token bruto que veio do cliente
 	hashedRT := crypto.SHA256Raw(input.RefreshToken)
 
-	// Busca token no banco de dados
 	rtRecord, err := u.userRepo.GetRefreshTokenByHash(ctx, hashedRT)
 	if err != nil || rtRecord == nil {
 		return nil, errors.New("refresh token inválido")
 	}
 
-	// CRÍTICO: Token já foi revogado. Sinal de que foi roubado e reusado.
-	// Revogar a família inteira!
 	if rtRecord.IsRevoked {
 		_ = u.userRepo.RevokeTokenFamily(ctx, rtRecord.FamilyID)
 		return nil, errors.New("token comprometido, sessão encerrada por segurança")
 	}
 
-	// Token expirou naturalmente
 	if !rtRecord.IsValid() {
 		return nil, errors.New("refresh token expirado, faça login novamente")
 	}
 
-	// Revogamos imediatamente (Rotation) o RT atual pois acabou de ser usado validamente
 	if err := u.userRepo.RevokeRefreshToken(ctx, rtRecord.ID); err != nil {
 		return nil, errors.New("falha interna rotacionando chave")
 	}
 
-	// Emitimos um novo.
 	usr, err := u.userRepo.GetByID(ctx, rtRecord.UserID)
 	if err != nil || usr == nil || !usr.IsActive {
 		return nil, errors.New("usuário desativado ou não encontrado")
@@ -74,7 +65,6 @@ func (u *RefreshUseCase) Execute(ctx context.Context, input RefreshInput) (*Toke
 
 	newHashedRT := crypto.SHA256Raw(newRawRefreshToken)
 
-	// Repare que passamos o MESMO Family ID para agrupar essa sequência de refresh
 	newRtRecord := &user.RefreshToken{
 		UserID:    usr.ID,
 		TokenHash: newHashedRT,
