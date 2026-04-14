@@ -11,6 +11,7 @@ import (
 	"github.com/SCAPUTO88/fit-brother/internal/adapters/repository/postgres"
 	"github.com/SCAPUTO88/fit-brother/internal/application/auth"
 	"github.com/SCAPUTO88/fit-brother/internal/application/student"
+	appworkout "github.com/SCAPUTO88/fit-brother/internal/application/workout"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/config"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/crypto"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/jwt"
@@ -46,6 +47,7 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 
 	userRepo := postgres.NewUserRepository(db)
 	studentRepo := postgres.NewStudentRepository(db)
+	workoutRepo := postgres.NewWorkoutRepository(db)
 
 	loginUC := auth.NewLoginUseCase(userRepo, passwordSvc, jwtSvc, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
 	refreshUC := auth.NewRefreshUseCase(userRepo, jwtSvc, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
@@ -55,8 +57,14 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 	getStudentUC := student.NewGetStudentUseCase(userRepo, studentRepo, aesEncryptor)
 	anonymizeStudentUC := student.NewAnonymizeStudentUseCase(userRepo, studentRepo)
 
+	createPlanUC := appworkout.NewCreatePlanUseCase(workoutRepo)
+	createSessionUC := appworkout.NewCreateSessionUseCase(workoutRepo)
+	createExerciseUC := appworkout.NewCreateExerciseUseCase(workoutRepo)
+	listPlansUC := appworkout.NewListPlansUseCase(workoutRepo)
+
 	authHandler := handler.NewAuthHandler(loginUC, refreshUC, logoutUC)
 	studentHandler := handler.NewStudentHandler(createStudentUC, getStudentUC, anonymizeStudentUC)
+	workoutHandler := handler.NewWorkoutHandler(createPlanUC, createSessionUC, createExerciseUC, listPlansUC)
 
 	v1 := router.Group("/v1")
 	{
@@ -70,6 +78,7 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 
 		authHandler.RegisterRoutes(v1)
 		studentHandler.RegisterRoutes(v1, middleware.RequireAuth(jwtSvc))
+		workoutHandler.RegisterRoutes(v1, middleware.RequireAuth(jwtSvc))
 	}
 
 	return router, nil
