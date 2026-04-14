@@ -1,0 +1,168 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  GO_VERSION: "1.23"
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # Lint — verifica formatação e qualidade do código
+  # ----------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: Check formatting
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "Os seguintes arquivos precisam de formatacao:"
+            gofmt -l .
+            exit 1
+          fi
+
+  # ----------------------------------------------------------------------------
+  # Security — vulnerabilidades em dependências
+  # ----------------------------------------------------------------------------
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+  # ----------------------------------------------------------------------------
+  # Test — testes unitários e de integração
+  # ----------------------------------------------------------------------------
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fitbrother
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: fitbrother_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run unit tests
+        run: go test -v -race -count=1 ./internal/...
+
+      - name: Run integration tests
+        env:
+          DATABASE_URL: postgres://fitbrother:secret@localhost:5432/fitbrother_test?sslmode=disable
+          REDIS_URL: redis://localhost:6379
+          APP_ENV: test
+          # Secrets de teste (valores falsos apenas para CI)
+          AES_KEY: dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleTA=
+          CPF_HMAC_SECRET: test-hmac-secret-for-ci-only-32chars!
+          PASSWORD_PEPPER: test-pepper-for-ci-only-32chars!!
+          JWT_PRIVATE_KEY_PATH: ./secrets/jwt_rsa_test.pem
+          JWT_PUBLIC_KEY_PATH: ./secrets/jwt_rsa_test.pub.pem
+          R2_ACCOUNT_ID: test
+          R2_ACCESS_KEY_ID: test
+          R2_SECRET_ACCESS_KEY: test
+          R2_BUCKET: test
+          R2_PUBLIC_URL: http://localhost
+        run: go test -v -race -count=1 -tags integration ./tests/integration/...
+
+      - name: Coverage report
+        run: |
+          go test -coverprofile=coverage.out ./internal/...
+          go tool cover -func=coverage.out
+
+  # ----------------------------------------------------------------------------
+  # Build — valida que o binário compila corretamente
+  # ----------------------------------------------------------------------------
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build binary
+        run: CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /tmp/server ./cmd/api
+
+      - name: Build Docker image
+        run: docker build -f docker/Dockerfile -t fit-brother:${{ github.sha }} .
+
+  # ----------------------------------------------------------------------------
+  # Deploy — automático no Railway ao fazer push na main
+  # ----------------------------------------------------------------------------
+  deploy:
+    name: Deploy to Railway
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service fit-brother-api

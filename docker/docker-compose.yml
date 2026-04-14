@@ -1,0 +1,116 @@
+# ==============================================================================
+# docker-compose.yml — Ambiente de Desenvolvimento Local
+# Este arquivo NÃO é usado em produção.
+# Em produção: Railway (backend) + Supabase (DB) + Upstash (Redis) + R2 (storage)
+# ==============================================================================
+version: '3.9'
+
+services:
+  # ----------------------------------------------------------------------------
+  # API Backend Go
+  # ----------------------------------------------------------------------------
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: fitbrother_api
+    ports:
+      - "8080:8080"
+    environment:
+      APP_ENV: development
+      APP_PORT: "8080"
+      APP_BASE_URL: http://localhost:8080
+      # Banco local (docker)
+      DATABASE_URL: postgres://fitbrother:secret@postgres:5432/fitbrother_db?sslmode=disable
+      # Redis local (docker)
+      REDIS_URL: redis://redis:6379
+      # Segredos — definidos no .env local
+      AES_KEY: ${AES_KEY}
+      CPF_HMAC_SECRET: ${CPF_HMAC_SECRET}
+      PASSWORD_PEPPER: ${PASSWORD_PEPPER}
+      JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private_key
+      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public_key
+      JWT_ACCESS_TOKEN_TTL: 15m
+      JWT_REFRESH_TOKEN_TTL: 168h
+      # Cloudflare R2 (usa as vars do .env local)
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
+      R2_BUCKET: ${R2_BUCKET:-fit-brother-videos}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL}
+      VIDEO_SIGNED_URL_TTL_MINUTES: "5"
+      CORS_ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:5173"
+    secrets:
+      - jwt_private_key
+      - jwt_public_key
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Hot-reload em desenvolvimento (com air)
+      - ..:/app
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------------
+  # PostgreSQL — réplica local do Supabase para desenvolvimento offline
+  # ----------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: fitbrother_postgres
+    environment:
+      POSTGRES_USER: fitbrother
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: fitbrother_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fitbrother -d fitbrother_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------------
+  # Redis — réplica local do Upstash para desenvolvimento offline
+  # ----------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: fitbrother_redis
+    command: redis-server --requirepass devpassword --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "devpassword", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------------
+  # Adminer — UI para inspecionar o banco em desenvolvimento
+  # Acesse: http://localhost:8081
+  # ----------------------------------------------------------------------------
+  adminer:
+    image: adminer:latest
+    container_name: fitbrother_adminer
+    ports:
+      - "8081:8080"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+secrets:
+  jwt_private_key:
+    file: ../secrets/jwt_rsa.pem
+  jwt_public_key:
+    file: ../secrets/jwt_rsa.pub.pem
