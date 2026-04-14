@@ -30,17 +30,13 @@ func NewR2Storage(cfg *config.R2Config) (*R2Storage, error) {
 			cfg.SecretAccessKey,
 			"",
 		)),
-		awsconfig.WithEndpointResolverWithOptions(
-			aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-				return aws.Endpoint{URL: r2Endpoint}, nil
-			}),
-		),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao configurar cliente R2: %w", err)
 	}
 
 	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(r2Endpoint)
 		o.UsePathStyle = true
 	})
 
