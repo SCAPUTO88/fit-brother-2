@@ -56,8 +56,6 @@ func (r *StudentRepository) GetByCPFHash(ctx context.Context, cpfHash string) (*
 	return &std, nil
 }
 
-// Delete faz a deleção. Pela LGPD nós também deveriamos zerar os CPFs aqui. O User recebe SoftDelete,
-// a linha de Student pode ser apagada apagando também Biometrias ou zerando o Hash e EncryptedCpf pra texto generico.
 func (r *StudentRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	query := `DELETE FROM students WHERE id = $1`
 	_, err := r.db.ExecContext(ctx, query, id)

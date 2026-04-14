@@ -16,7 +16,6 @@ import (
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/jwt"
 )
 
-// SetupRouter injeta todas as dependências do projeto e retorna a Engine do Gin configurada.
 func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 	if cfg.App.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
@@ -25,9 +24,6 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 	router := gin.New()
 	router.Use(gin.Recovery())
 
-	// ==========================================
-	// INFRAESTRUTURA COMPARTILHADA
-	// ==========================================
 	passwordSvc, err := crypto.NewPasswordService(cfg.Crypto.PasswordPepper)
 	if err != nil {
 		return nil, fmt.Errorf("falha configurando auth crypto: %w", err)
@@ -48,9 +44,6 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 		return nil, fmt.Errorf("falha configurando hash gen: %w", err)
 	}
 
-	// ==========================================
-	// DOMÍNIO USER / AUTH
-	// ==========================================
 	userRepo := postgres.NewUserRepository(db)
 	studentRepo := postgres.NewStudentRepository(db)
 
@@ -65,12 +58,8 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 	authHandler := handler.NewAuthHandler(loginUC, refreshUC, logoutUC)
 	studentHandler := handler.NewStudentHandler(createStudentUC, getStudentUC, anonymizeStudentUC)
 
-	// ==========================================
-	// REGISTRO DE ROTAS
-	// ==========================================
 	v1 := router.Group("/v1")
 	{
-		// Health Check
 		v1.GET("/health", func(c *gin.Context) {
 			c.JSON(200, gin.H{
 				"status":  "ok",
@@ -79,19 +68,8 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 			})
 		})
 
-		// Rotas de Auth (Publicas)
 		authHandler.RegisterRoutes(v1)
-
-		// Rotas do Modulo de Alunos
-		// A criação de alunos é pública (ou protegida por outro middleware no futuro).
-		// Buscas e remoções exigem autenticação do Owner.
 		studentHandler.RegisterRoutes(v1, middleware.RequireAuth(jwtSvc))
-
-		// Rotas Protegidas Globais (Precisam do JWT validado)
-		// protected := v1.Group("")
-		// protected.Use(middleware.RequireAuth(jwtSvc))
-		// Aqui poderíamos ter fichas de Treinadores e outros módulos
-
 	}
 
 	return router, nil

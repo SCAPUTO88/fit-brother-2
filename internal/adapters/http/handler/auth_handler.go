@@ -27,7 +27,6 @@ func NewAuthHandler(
 	}
 }
 
-// RegisterRoutes acopla os use-cases ao roteador Gin
 func (h *AuthHandler) RegisterRoutes(router *gin.RouterGroup) {
 	group := router.Group("/auth")
 	{
@@ -86,17 +85,14 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		return
 	}
 
-	// Soft logout sempre retorna 200 OK ou 204 No Content se sucesso pra gente.
 	c.Status(http.StatusNoContent)
 }
 
-// getClientIP obtém o IP limpo do request.
 func getClientIP(c *gin.Context) string {
 	ip := c.ClientIP()
 	if ip == "::1" {
 		return "127.0.0.1"
 	}
-	// Limpa portas, caso venha do proxy "IP:Porta"
 	if idx := strings.LastIndex(ip, ":"); idx != -1 && strings.Count(ip, ":") == 1 {
 		ip = ip[:idx]
 	}

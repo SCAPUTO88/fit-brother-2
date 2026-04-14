@@ -8,20 +8,16 @@ import (
 	"github.com/google/uuid"
 )
 
-// Constantes de regra de negócio (Roles)
 const (
 	RoleTrainer = "TRAINER"
 	RoleStudent = "STUDENT"
-	// RoleAdmin = "ADMIN" (A definir no futuro se necessário)
 )
 
-// User representa a entidade purista de Domínio para Usuários
-// O Domínio não conhece banco de dados, nem JSON.
 type User struct {
 	ID           uuid.UUID
 	Email        string
 	FullName     string
-	PasswordHash string // Guardamos apenas o Hash c/ Pepper no contexto do domínio
+	PasswordHash string
 	Role         string
 	IsActive     bool
 	CreatedAt    time.Time
@@ -29,7 +25,6 @@ type User struct {
 	DeletedAt    *time.Time
 }
 
-// Validate executará a validação central de negócio para a criação/atualização
 func (u *User) Validate() error {
 	if u.FullName == "" {
 		return errors.New("o nome completo é obrigatório")
@@ -47,7 +42,6 @@ func (u *User) Validate() error {
 	return nil
 }
 
-// Activate / Deactivate controlam o acesso sem deletar registros
 func (u *User) Activate() {
 	u.IsActive = true
 	u.UpdatedAt = time.Now()
@@ -58,11 +52,10 @@ func (u *User) Deactivate() {
 	u.UpdatedAt = time.Now()
 }
 
-// RecordTokens encapsula a representação de um Refresh Token no domínio
 type RefreshToken struct {
 	ID        uuid.UUID
 	UserID    uuid.UUID
-	TokenHash string // Hash bruto (ex. SHA256) do token opaco
+	TokenHash string
 	FamilyID  uuid.UUID
 	IsRevoked bool
 	ExpiresAt time.Time
@@ -70,7 +63,6 @@ type RefreshToken struct {
 	CreatedIP string
 }
 
-// IsValid checa se um refresh token pode ser rotacionado
 func (r *RefreshToken) IsValid() bool {
 	return !r.IsRevoked && time.Now().Before(r.ExpiresAt)
 }

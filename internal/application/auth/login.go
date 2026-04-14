@@ -37,20 +37,16 @@ func NewLoginUseCase(
 	}
 }
 
-// Execute orquestra a autenticação: valida usuário -> emitir tokens
 func (u *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*TokenOutput, error) {
-	// 1. Busca usuário pelo email
 	usr, err := u.userRepo.GetByEmail(ctx, input.Email)
 	if err != nil || usr == nil || !usr.IsActive {
 		return nil, errors.New("credenciais inválidas")
 	}
 
-	// 2. Compara Hash da Senha
 	if !u.passwordService.Check(input.Password, usr.PasswordHash) {
 		return nil, errors.New("credenciais inválidas")
 	}
 
-	// 3. Gera um novo Refresh Token opaco e seguro (família nova)
 	familyID := uuid.New()
 	sessionID := uuid.New().String()
 
@@ -69,12 +65,10 @@ func (u *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*TokenOut
 		CreatedIP: input.ClientIP,
 	}
 
-	// Salva no banco apenas o HASH do refresh token
 	if err := u.userRepo.CreateRefreshToken(ctx, rtRecord); err != nil {
 		return nil, errors.New("erro ao registrar sessão")
 	}
 
-	// 4. Gera Access Token (JWT) assinado com chave privada RS256
 	accessToken, err := u.jwtService.GenerateAccessToken(usr.ID, usr.Role, sessionID, u.accessTTL)
 	if err != nil {
 		return nil, errors.New("erro ao assinar token de acesso")
@@ -82,14 +76,14 @@ func (u *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*TokenOut
 
 	return &TokenOutput{
 		AccessToken:  accessToken,
-		RefreshToken: rawRefreshToken, // Retornamos o bruto pro usuário guardar de forma segura
+		RefreshToken: rawRefreshToken,
 		ExpiresIn:    int(u.accessTTL.Seconds()),
 		Role:         usr.Role,
 	}, nil
 }
 
 func generateOpaqueToken() (string, error) {
-	b := make([]byte, 32) // 256 bits of entropy
+	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}

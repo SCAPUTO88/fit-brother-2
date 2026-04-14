@@ -28,16 +28,11 @@ func NewStudentHandler(
 	}
 }
 
-// RegisterRoutes acopla os endpoints do dominio de Student ao Router, adicionando os middlewares de protecao JWT.
-// Por segurança, apenas TRAINERS (ou o proprio admin) deveriam conseguir cadastrar alunos.
 func (h *StudentHandler) RegisterRoutes(router *gin.RouterGroup, auther gin.HandlerFunc) {
 	group := router.Group("/students")
 
-	// Pública
 	group.POST("", h.Create)
 
-	// Rotas em que DEVE haver Token Validado passando antes via RouterGroup (auth_middleware)
-	// Para leitura profunda de ficha (Com revelação do CPF) e LGPD Anonymizer
 	protected := group.Group("")
 	if auther != nil {
 		protected.Use(auther)
@@ -49,7 +44,6 @@ func (h *StudentHandler) RegisterRoutes(router *gin.RouterGroup, auther gin.Hand
 func (h *StudentHandler) Create(c *gin.Context) {
 	var input student.CreateStudentInput
 
-	// BindJSON fará a checagem das annotations de "binding:required,email,etc"
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "dados inválidos: " + err.Error()})
 		return
@@ -84,10 +78,8 @@ func (h *StudentHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	// === LGPD Authorization Gate === //
-	// Impede que Alunos consigam pegar laudos e CPFs de outros assinantes
 	if claims.Role == "STUDENT" && claims.UserID.String() != out.UserID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "você não tem persmissão para visualizar o CPF/Laudo Biométrico de outros perfis"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "você não tem permissão para visualizar o CPF/Laudo Biométrico de outros perfis"})
 		return
 	}
 
@@ -108,12 +100,10 @@ func (h *StudentHandler) Anonymize(c *gin.Context) {
 		return
 	}
 
-	// === Segurança de Direito ao Esquecimento === //
-	// Alunos solicitando esquecimento só podem pedir do seu proprio perfil
 	if claims.Role == "STUDENT" {
 		out, _ := h.getUC.Execute(c.Request.Context(), studID)
 		if out != nil && claims.UserID.String() != out.UserID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "LGPD Breach Act: não é permitido solicitar anonimização de terceiros"})
+			c.JSON(http.StatusForbidden, gin.H{"error": "não é permitido solicitar anonimização de terceiros"})
 			return
 		}
 	}
