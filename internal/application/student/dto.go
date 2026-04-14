@@ -8,10 +8,19 @@ type CreateStudentInput struct {
 	CPF      string `json:"cpf" binding:"required"`
 }
 
-// StudentOutput representa a saida segura (sem dados sensíveis)
+// StudentOutput representa a saida padrao segura (sem dados sensíveis)
 type StudentOutput struct {
 	ID        string `json:"id"`
 	Email     string `json:"email"`
 	FullName  string `json:"full_name"`
+	CreatedAt string `json:"created_at"`
+}
+
+// StudentDetailOutput representa uma leitura profunda que descriptografa informações confidenciais
+type StudentDetailOutput struct {
+	ID        string `json:"id"`
+	Email     string `json:"email"`
+	FullName  string `json:"full_name"`
+	CPF       string `json:"cpf"` // Exibido apenas em consultas restritas
 	CreatedAt string `json:"created_at"`
 }

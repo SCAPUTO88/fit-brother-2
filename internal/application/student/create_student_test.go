@@ -27,7 +27,11 @@ func (m *MockUserRepo) Create(ctx context.Context, u *domainU.User) error {
 	return args.Error(0)
 }
 func (m *MockUserRepo) GetByID(ctx context.Context, id uuid.UUID) (*domainU.User, error) {
-	return nil, nil // Ignorado nesse teste
+	args := m.Called(ctx, id)
+	if usr := args.Get(0); usr != nil {
+		return usr.(*domainU.User), args.Error(1)
+	}
+	return nil, args.Error(1)
 }
 func (m *MockUserRepo) GetByEmail(ctx context.Context, email string) (*domainU.User, error) {
 	args := m.Called(ctx, email)
@@ -36,7 +40,10 @@ func (m *MockUserRepo) GetByEmail(ctx context.Context, email string) (*domainU.U
 	}
 	return nil, args.Error(1)
 }
-func (m *MockUserRepo) Update(ctx context.Context, u *domainU.User) error          { return nil }
+func (m *MockUserRepo) Update(ctx context.Context, u *domainU.User) error {
+	args := m.Called(ctx, u)
+	return args.Error(0)
+}
 func (m *MockUserRepo) CreateRefreshToken(ctx context.Context, rt *domainU.RefreshToken) error { return nil }
 func (m *MockUserRepo) GetRefreshTokenByHash(ctx context.Context, hash string) (*domainU.RefreshToken, error) { return nil, nil }
 func (m *MockUserRepo) RevokeRefreshToken(ctx context.Context, id uuid.UUID) error { return nil }
@@ -51,7 +58,11 @@ func (m *MockStudentRepo) Create(ctx context.Context, u *domainS.Student) error 
 	return args.Error(0)
 }
 func (m *MockStudentRepo) GetByID(ctx context.Context, id uuid.UUID) (*domainS.Student, error) {
-	return nil, nil
+	args := m.Called(ctx, id)
+	if std := args.Get(0); std != nil {
+		return std.(*domainS.Student), args.Error(1)
+	}
+	return nil, args.Error(1)
 }
 func (m *MockStudentRepo) GetByCPFHash(ctx context.Context, cpfHash string) (*domainS.Student, error) {
 	args := m.Called(ctx, cpfHash)
@@ -60,7 +71,10 @@ func (m *MockStudentRepo) GetByCPFHash(ctx context.Context, cpfHash string) (*do
 	}
 	return nil, args.Error(1)
 }
-func (m *MockStudentRepo) Delete(ctx context.Context, id uuid.UUID) error                { return nil }
+func (m *MockStudentRepo) Delete(ctx context.Context, id uuid.UUID) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
 func (m *MockStudentRepo) SaveBiometric(ctx context.Context, b *domainS.BiometricData) error { return nil }
 
 // --- Test Suite ---
