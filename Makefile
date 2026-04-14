@@ -1,4 +1,4 @@
-.PHONY: dev test test-coverage build tidy format up down logs
+.PHONY: dev test test-coverage build tidy format pre-push up down logs
 
 # Inicia a aplicacao localmente rodando no terminal conectado no docker compose
 dev: up
@@ -29,7 +29,11 @@ tidy:
 # Formata o codigo no padrao da Google
 format:
 	@echo "Formatando fontes..."
-	@go fmt ./...
+	@gofmt -w $$(find . -name '*.go' -not -path './vendor/*')
+
+# Roda format + test antes de qualquer push (use: make pre-push)
+pre-push: format test
+	@echo "Tudo OK! Pode fazer o push com seguranca."
 
 # Docker comandos (Subir infra local PostgreSQL e Redis)
 up:
