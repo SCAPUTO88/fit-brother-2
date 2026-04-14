@@ -7,6 +7,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	"github.com/SCAPUTO88/fit-brother/internal/adapters/http/handler"
+	"github.com/SCAPUTO88/fit-brother/internal/adapters/http/middleware"
 	"github.com/SCAPUTO88/fit-brother/internal/adapters/repository/postgres"
 	"github.com/SCAPUTO88/fit-brother/internal/application/auth"
 	"github.com/SCAPUTO88/fit-brother/internal/application/student"
@@ -58,9 +59,11 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 	logoutUC := auth.NewLogoutUseCase(userRepo)
 	
 	createStudentUC := student.NewCreateStudentUseCase(userRepo, studentRepo, passwordSvc, aesEncryptor, hashGen)
+	getStudentUC := student.NewGetStudentUseCase(userRepo, studentRepo, aesEncryptor)
+	anonymizeStudentUC := student.NewAnonymizeStudentUseCase(userRepo, studentRepo)
 
 	authHandler := handler.NewAuthHandler(loginUC, refreshUC, logoutUC)
-	studentHandler := handler.NewStudentHandler(createStudentUC)
+	studentHandler := handler.NewStudentHandler(createStudentUC, getStudentUC, anonymizeStudentUC)
 
 	// ==========================================
 	// REGISTRO DE ROTAS
@@ -80,7 +83,16 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 		authHandler.RegisterRoutes(v1)
 
 		// Rotas do Modulo de Alunos
-		studentHandler.RegisterRoutes(v1)
+		// A criação de alunos é pública (ou protegida por outro middleware no futuro).
+		// Buscas e remoções exigem autenticação do Owner.
+		studentHandler.RegisterRoutes(v1, middleware.RequireAuth(jwtSvc))
+
+		// Rotas Protegidas Globais (Precisam do JWT validado)
+		// protected := v1.Group("")
+		// protected.Use(middleware.RequireAuth(jwtSvc))
+		// Aqui poderíamos ter fichas de Treinadores e outros módulos
+
+
 	}
 
 	return router, nil

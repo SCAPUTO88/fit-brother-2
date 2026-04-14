@@ -55,6 +55,7 @@ func (c *GetStudentUseCase) Execute(ctx context.Context, studentID uuid.UUID) (*
 
 	return &StudentDetailOutput{
 		ID:        stud.ID.String(),
+		UserID:    stud.UserID.String(),
 		Email:     usr.Email,
 		FullName:  usr.FullName,
 		CPF:       clearCPF,

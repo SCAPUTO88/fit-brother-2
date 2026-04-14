@@ -19,6 +19,7 @@ type StudentOutput struct {
 // StudentDetailOutput representa uma leitura profunda que descriptografa informações confidenciais
 type StudentDetailOutput struct {
 	ID        string `json:"id"`
+	UserID    string `json:"user_id"` // Necessario para RBAC de ownership no handler
 	Email     string `json:"email"`
 	FullName  string `json:"full_name"`
 	CPF       string `json:"cpf"` // Exibido apenas em consultas restritas
