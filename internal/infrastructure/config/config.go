@@ -42,10 +42,10 @@ type CryptoConfig struct {
 }
 
 type JWTConfig struct {
-	PrivateKeyPath    string
-	PublicKeyPath     string
-	AccessTokenTTL    time.Duration
-	RefreshTokenTTL   time.Duration
+	PrivateKeyPath  string
+	PublicKeyPath   string
+	AccessTokenTTL  time.Duration
+	RefreshTokenTTL time.Duration
 }
 
 type R2Config struct {

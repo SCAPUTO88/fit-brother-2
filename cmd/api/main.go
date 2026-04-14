@@ -10,8 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
 
+	router "github.com/SCAPUTO88/fit-brother/internal/adapters/http"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/config"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/logger"
 )
@@ -35,22 +38,23 @@ func main() {
 		Str("port", cfg.App.Port).
 		Msg("Iniciando Fit Brother API")
 
-	// 3. TODO: Inicializar banco de dados (Sprint 1)
-	// db, err := database.Connect(cfg.Database.URL)
+	// 3. Inicializar banco de dados
+	db, err := sqlx.Connect("pgx", cfg.Database.URL)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Erro ao conectar no banco de dados Postgres")
+	}
+	defer db.Close()
 
-	// 4. TODO: Inicializar Redis (Sprint 1)
-	// redisClient := redisclient.New(cfg.Redis.URL)
+	// Configurar pool de conexões (melhoria de resiliência e performance)
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(25)
+	db.SetConnMaxLifetime(5 * time.Minute)
 
-	// 5. TODO: Montar router HTTP (Sprint 1)
-	// router := http.SetupRouter(cfg, db, redisClient)
-
-	// Servidor temporário para validar o build
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"status":"ok","env":"%s","version":"1.0.0"}`, cfg.App.Env)
-	})
+	// 4. Montar router HTTP
+	mux, err := router.SetupRouter(cfg, db)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Erro configurando o Router HTTP")
+	}
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.App.Port,
