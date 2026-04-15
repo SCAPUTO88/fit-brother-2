@@ -107,7 +107,7 @@ class DashboardScreen extends ConsumerWidget {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {}, // TODO: Tela de novo aluno
+        onPressed: () => context.push('/students/create'),
         icon: const Icon(Icons.person_add),
         label: const Text('Novo Aluno'),
       ),
@@ -145,7 +145,10 @@ class DashboardScreen extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.assignment),
             title: const Text('Planos de Treino'),
-            onTap: () => Navigator.pop(context),
+            onTap: () {
+              Navigator.pop(context);
+              context.push('/workouts');
+            },
           ),
           ListTile(
             leading: const Icon(Icons.video_library),
