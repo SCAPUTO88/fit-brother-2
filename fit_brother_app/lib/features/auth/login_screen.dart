@@ -33,26 +33,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
 
     await ref.read(authProvider.notifier).login(email, password);
-    
-    // Auth state has been updated. Check if we need to redirect or show error
-    final authState = ref.read(authProvider);
+
     if (!mounted) return;
 
-    authState.when(
-      data: (_) => context.go('/dashboard'),
-      error: (err, _) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(err.toString()), backgroundColor: Colors.red),
-        );
-      },
-      loading: () {},
-    );
+    final authState = ref.read(authProvider);
+    if (authState.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(authState.error!), backgroundColor: Colors.red),
+      );
+    } else if (authState.isLoggedIn) {
+      context.go('/dashboard');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authProvider);
-    final isLoading = authState.isLoading;
+    final isLoading = ref.watch(authProvider).isLoading;
 
     return Scaffold(
       body: Center(
@@ -96,7 +92,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 child: isLoading
                     ? const SizedBox(
-                        height: 20, width: 20,
+                        height: 20,
+                        width: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Text('ENTRAR', style: TextStyle(fontSize: 16)),

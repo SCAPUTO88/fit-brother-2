@@ -1,6 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'dart:io';
+
 
 class DioClient {
   final Dio dio;
@@ -10,13 +10,13 @@ class DioClient {
     required this.secureStorage,
     String baseUrl = 'http://localhost:8080/v1',
   }) : dio = Dio(
-          BaseOptions(
-            baseUrl: baseUrl,
-            connectTimeout: const Duration(seconds: 10),
-            receiveTimeout: const Duration(seconds: 10),
-            headers: {'Content-Type': 'application/json'},
-          ),
-        ) {
+            BaseOptions(
+              baseUrl: baseUrl,
+              connectTimeout: const Duration(seconds: 10),
+              receiveTimeout: const Duration(seconds: 10),
+              headers: {'Content-Type': 'application/json'},
+            ),
+          ) {
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         final token = await secureStorage.read(key: 'access_token');
@@ -26,9 +26,8 @@ class DioClient {
         return handler.next(options);
       },
       onError: (DioException e, handler) async {
-        // Implement Refresh Token logic here later
         if (e.response?.statusCode == 401) {
-          // Token expirado, forçar logout ou tentar refresh
+          // Token expirado - implementar refresh flow
         }
         return handler.next(e);
       },
