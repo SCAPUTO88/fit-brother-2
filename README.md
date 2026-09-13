@@ -28,7 +28,7 @@ implementation roadmap.
 
 | Layer | Technology |
 | --- | --- |
-| Backend | Go 1.25.x, Gin, sqlx, pgx/v5 |
+| Backend | Go 1.26.6 in CI/Docker, module Go 1.25.0, Gin, sqlx, pgx/v5 |
 | Database | Supabase PostgreSQL in production; PostgreSQL 16 locally |
 | Cache | Upstash Redis in production; Redis 7 locally |
 | Video storage | Cloudflare R2 with signed URLs |
@@ -51,7 +51,7 @@ implementation roadmap.
 
 ### Requirements
 
-- Go 1.25.x
+- Go 1.26.6 recommended for local parity with CI and Docker
 - Flutter 3.41.x / Dart 3.11.x
 - Docker Desktop
 - Git
@@ -190,4 +190,3 @@ The current roadmap is tracked in [docs/plano-de-ataque.md](docs/plano-de-ataque
 8. Frontend deploy.
 9. Operations and observability.
 10. Mobile app packaging.
-

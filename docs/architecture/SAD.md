@@ -31,7 +31,7 @@ Os objetivos arquiteturais sao:
 | Camada | Decisao | Justificativa |
 | --- | --- | --- |
 | App | Flutter Web/PWA primeiro; Android/iOS depois | Reuso de UI, rotas e estado; ja existe no repositorio |
-| Backend | Go 1.25.x + Gin | Baixo custo, binario simples, codigo atual |
+| Backend | Go 1.26.6 em CI/Docker, modulo Go 1.25.0 + Gin | Baixo custo, binario simples, codigo atual |
 | Banco | Supabase PostgreSQL | PostgreSQL gerenciado free-tier usando `DATABASE_URL` |
 | Banco local | PostgreSQL 16 via Docker Compose | Replica local simples da Supabase |
 | Cache | Upstash Redis | Rate limit, sessoes auxiliares e cache curto |
@@ -435,4 +435,3 @@ Evolucao:
 - Redis e usado primeiro para rate limit, depois cache curto.
 - Diagramas deste SAD representam fluxos implementaveis no codigo atual.
 - Nenhuma decisao exige servico pago para o MVP pessoal.
-
