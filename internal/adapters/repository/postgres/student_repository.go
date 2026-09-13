@@ -56,6 +56,25 @@ func (r *StudentRepository) GetByCPFHash(ctx context.Context, cpfHash string) (*
 	return &std, nil
 }
 
+func (r *StudentRepository) ListAll(ctx context.Context) ([]*student.StudentBaseInfo, error) {
+	query := `
+		SELECT s.id, u.full_name, u.email
+		FROM students s
+		INNER JOIN users u ON s.user_id = u.id
+		WHERE u.deleted_at IS NULL AND u.is_active = true
+		ORDER BY u.full_name ASC
+	`
+	var items []*student.StudentBaseInfo
+	err := r.db.SelectContext(ctx, &items, query)
+	if err != nil {
+		return nil, err
+	}
+	if items == nil {
+		items = make([]*student.StudentBaseInfo, 0)
+	}
+	return items, nil
+}
+
 func (r *StudentRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	query := `DELETE FROM students WHERE id = $1`
 	_, err := r.db.ExecContext(ctx, query, id)

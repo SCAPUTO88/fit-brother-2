@@ -14,15 +14,15 @@ const (
 )
 
 type User struct {
-	ID           uuid.UUID
-	Email        string
-	FullName     string
-	PasswordHash string
-	Role         string
-	IsActive     bool
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	DeletedAt    *time.Time
+	ID           uuid.UUID  `db:"id"`
+	Email        string     `db:"email"`
+	FullName     string     `db:"full_name"`
+	PasswordHash string     `db:"password_hash"`
+	Role         string     `db:"role"`
+	IsActive     bool       `db:"is_active"`
+	CreatedAt    time.Time  `db:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at"`
+	DeletedAt    *time.Time `db:"deleted_at"`
 }
 
 func (u *User) Validate() error {
@@ -53,14 +53,14 @@ func (u *User) Deactivate() {
 }
 
 type RefreshToken struct {
-	ID        uuid.UUID
-	UserID    uuid.UUID
-	TokenHash string
-	FamilyID  uuid.UUID
-	IsRevoked bool
-	ExpiresAt time.Time
-	CreatedAt time.Time
-	CreatedIP string
+	ID        uuid.UUID `db:"id"`
+	UserID    uuid.UUID `db:"user_id"`
+	TokenHash string    `db:"token_hash"`
+	FamilyID  uuid.UUID `db:"family_id"`
+	IsRevoked bool      `db:"is_revoked"`
+	ExpiresAt time.Time `db:"expires_at"`
+	CreatedAt time.Time `db:"created_at"`
+	CreatedIP string    `db:"created_ip"`
 }
 
 func (r *RefreshToken) IsValid() bool {

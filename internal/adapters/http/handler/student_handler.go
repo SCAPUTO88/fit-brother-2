@@ -13,17 +13,20 @@ import (
 type StudentHandler struct {
 	createUC    *student.CreateStudentUseCase
 	getUC       *student.GetStudentUseCase
+	listUC      *student.ListStudentsUseCase
 	anonymizeUC *student.AnonymizeStudentUseCase
 }
 
 func NewStudentHandler(
 	createUC *student.CreateStudentUseCase,
 	getUC *student.GetStudentUseCase,
+	listUC *student.ListStudentsUseCase,
 	anonymizeUC *student.AnonymizeStudentUseCase,
 ) *StudentHandler {
 	return &StudentHandler{
 		createUC:    createUC,
 		getUC:       getUC,
+		listUC:      listUC,
 		anonymizeUC: anonymizeUC,
 	}
 }
@@ -37,6 +40,7 @@ func (h *StudentHandler) RegisterRoutes(router *gin.RouterGroup, auther gin.Hand
 	if auther != nil {
 		protected.Use(auther)
 	}
+	protected.GET("", h.List)
 	protected.GET("/:id", h.GetByID)
 	protected.DELETE("/:id", h.Anonymize)
 }
@@ -115,4 +119,20 @@ func (h *StudentHandler) Anonymize(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Dados identificáveis removidos com sucesso. Perfil Inativado."})
+}
+
+func (h *StudentHandler) List(c *gin.Context) {
+	_, ok := middleware.GetClaims(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "acesso negado, sessão inválida"})
+		return
+	}
+
+	out, err := h.listUC.Execute(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, out)
 }

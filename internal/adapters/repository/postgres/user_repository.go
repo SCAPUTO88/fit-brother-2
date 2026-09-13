@@ -22,13 +22,12 @@ func NewUserRepository(db *sqlx.DB) *UserRepository {
 
 func (r *UserRepository) Create(ctx context.Context, u *user.User) error {
 	query := `
-		INSERT INTO users (email, full_name, password_hash, role, is_active)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, created_at, updated_at
+		INSERT INTO users (id, email, full_name, password_hash, role, is_active, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
-	err := r.db.QueryRowContext(ctx, query,
-		u.Email, u.FullName, u.PasswordHash, u.Role, u.IsActive,
-	).Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt)
+	_, err := r.db.ExecContext(ctx, query,
+		u.ID, u.Email, u.FullName, u.PasswordHash, u.Role, u.IsActive, u.CreatedAt, u.UpdatedAt,
+	)
 
 	return err
 }

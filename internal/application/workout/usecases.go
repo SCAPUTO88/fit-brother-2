@@ -169,3 +169,86 @@ func toPlansOutput(plans []*domain.WorkoutPlan) []*PlanOutput {
 	}
 	return out
 }
+
+type GetPlanDetailsUseCase struct {
+	repo domain.Repository
+}
+
+func NewGetPlanDetailsUseCase(r domain.Repository) *GetPlanDetailsUseCase {
+	return &GetPlanDetailsUseCase{repo: r}
+}
+
+func (uc *GetPlanDetailsUseCase) Execute(ctx context.Context, planIDStr string, tokenUserID uuid.UUID, role string) (*PlanDetailsOutput, error) {
+	planID, err := uuid.Parse(planIDStr)
+	if err != nil {
+		return nil, errors.New("id do plano inválido")
+	}
+
+	plan, err := uc.repo.GetPlanByID(ctx, planID)
+	if err != nil {
+		return nil, err
+	}
+	if plan == nil {
+		return nil, errors.New("plano não encontrado")
+	}
+
+	// RBAC
+	if role == "STUDENT" && plan.StudentID != tokenUserID {
+		return nil, errors.New("acesso negado")
+	} else if role == "TRAINER" && plan.TrainerID != tokenUserID {
+		return nil, errors.New("acesso negado")
+	}
+
+	sessions, err := uc.repo.ListSessionsByPlan(ctx, plan.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	var sessionDetails []SessionDetailsOutput
+	for _, s := range sessions {
+		exercises, err := uc.repo.ListExercisesBySession(ctx, s.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		exOut := make([]ExerciseOutput, 0, len(exercises))
+		for _, e := range exercises {
+			exOut = append(exOut, ExerciseOutput{
+				ID:               e.ID.String(),
+				WorkoutSessionID: e.WorkoutSessionID.String(),
+				Name:             e.Name,
+				Sets:             e.Sets,
+				Reps:             e.Reps,
+				RestSeconds:      e.RestSeconds,
+				Notes:            e.Notes,
+				VideoURL:         e.VideoURL,
+				Position:         e.Position,
+			})
+		}
+
+		sessionDetails = append(sessionDetails, SessionDetailsOutput{
+			Session: SessionOutput{
+				ID:            s.ID.String(),
+				WorkoutPlanID: s.WorkoutPlanID.String(),
+				Title:         s.Title,
+				DayOfWeek:     s.DayOfWeek,
+				Notes:         s.Notes,
+				CreatedAt:     s.CreatedAt.Format(time.RFC3339),
+			},
+			Exercises: exOut,
+		})
+	}
+
+	return &PlanDetailsOutput{
+		Plan: PlanOutput{
+			ID:          plan.ID.String(),
+			TrainerID:   plan.TrainerID.String(),
+			StudentID:   plan.StudentID.String(),
+			Title:       plan.Title,
+			Description: plan.Description,
+			IsActive:    plan.IsActive,
+			CreatedAt:   plan.CreatedAt.Format(time.RFC3339),
+		},
+		Sessions: sessionDetails,
+	}, nil
+}

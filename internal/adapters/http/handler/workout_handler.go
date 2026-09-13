@@ -15,6 +15,7 @@ type WorkoutHandler struct {
 	createSessionUC  *appworkout.CreateSessionUseCase
 	createExerciseUC *appworkout.CreateExerciseUseCase
 	listPlansUC      *appworkout.ListPlansUseCase
+	getPlanDetailsUC *appworkout.GetPlanDetailsUseCase
 }
 
 func NewWorkoutHandler(
@@ -22,12 +23,14 @@ func NewWorkoutHandler(
 	cs *appworkout.CreateSessionUseCase,
 	ce *appworkout.CreateExerciseUseCase,
 	lp *appworkout.ListPlansUseCase,
+	gpd *appworkout.GetPlanDetailsUseCase,
 ) *WorkoutHandler {
 	return &WorkoutHandler{
 		createPlanUC:     cp,
 		createSessionUC:  cs,
 		createExerciseUC: ce,
 		listPlansUC:      lp,
+		getPlanDetailsUC: gpd,
 	}
 }
 
@@ -37,6 +40,7 @@ func (h *WorkoutHandler) RegisterRoutes(router *gin.RouterGroup, auther gin.Hand
 
 	g.POST("", h.CreatePlan)
 	g.GET("", h.ListPlans)
+	g.GET("/:id", h.GetPlanDetails)
 	g.POST("/:id/sessions", h.CreateSession)
 	g.POST("/sessions/:session_id/exercises", h.CreateExercise)
 }
@@ -67,6 +71,24 @@ func (h *WorkoutHandler) CreatePlan(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, out)
+}
+
+func (h *WorkoutHandler) GetPlanDetails(c *gin.Context) {
+	claims, ok := middleware.GetClaims(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "acesso negado"})
+		return
+	}
+
+	planIDStr := c.Param("id")
+
+	out, err := h.getPlanDetailsUC.Execute(c.Request.Context(), planIDStr, claims.UserID, claims.Role)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, out)
 }
 
 func (h *WorkoutHandler) ListPlans(c *gin.Context) {

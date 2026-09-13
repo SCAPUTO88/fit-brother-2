@@ -80,7 +80,7 @@ class WorkoutPlansScreen extends ConsumerWidget {
                                   : null,
                               trailing: const Icon(Icons.chevron_right),
                               onTap: () {
-                                // TODO: Navigate to Plan Details
+                                context.push('/workouts/${p.id}');
                               },
                             ),
                           );

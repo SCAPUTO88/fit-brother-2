@@ -1,151 +1,193 @@
-# Fit Brother 🏋️
+# Fit Brother
 
-Backend em **Go** para o sistema de gestão de treinos Fit Brother — seguro, LGPD-compliant e 100% baseado em serviços gratuitos.
+Fit Brother is a personal fitness platform for managing students, workout
+plans, sessions, exercises, and demonstration videos. The product direction is
+Flutter Web/PWA first, Android/iOS later, with a Go backend and a free-tier
+production stack.
+
+## Architecture
+
+The backend follows Hexagonal Architecture (Ports & Adapters):
+
+```text
+cmd/api                 Go API entrypoint
+internal/domain         Entities and repository/storage ports
+internal/application    Use cases and DTOs
+internal/adapters       HTTP handlers, Postgres repositories, R2 storage
+internal/infrastructure Config, crypto, JWT, logger
+migrations              SQL migrations for PostgreSQL
+fit_brother_app         Flutter Web/PWA and future mobile app
+docs                    Architecture and execution plans
+```
+
+See [docs/architecture/SAD.md](docs/architecture/SAD.md) for the full system
+architecture and [docs/plano-de-ataque.md](docs/plano-de-ataque.md) for the
+implementation roadmap.
 
 ## Stack
 
-| Camada | Tecnologia |
-|--------|-----------|
-| Backend | Go 1.23 + Gin |
-| Banco de Dados | PostgreSQL 16 (Supabase free tier) |
-| Cache | Redis (Upstash free tier) |
-| Storage de Vídeos | Cloudflare R2 (10 GB grátis, egress zero) |
-| Hosting | Railway.app (free tier) |
-| Admin Web | Next.js + Vercel (free tier) |
-| App Mobile | Flutter (Android + iOS) |
+| Layer | Technology |
+| --- | --- |
+| Backend | Go 1.25.x, Gin, sqlx, pgx/v5 |
+| Database | Supabase PostgreSQL in production; PostgreSQL 16 locally |
+| Cache | Upstash Redis in production; Redis 7 locally |
+| Video storage | Cloudflare R2 with signed URLs |
+| CDN/DNS | Cloudflare Free |
+| Backend deploy | Railway |
+| App deploy | Cloudflare Pages recommended; Vercel acceptable |
+| App | Flutter 3.41.x, Dart 3.11.4, Riverpod, GoRouter, Dio |
 | CI/CD | GitHub Actions |
 
-## Arquitetura
+## Current Capabilities
 
-Hexagonal Architecture (Ports & Adapters) — domínio completamente desacoplado de frameworks e infraestrutura.
+- JWT login, refresh, and logout flow.
+- Student creation, listing, detail lookup, and anonymization.
+- Workout plans, sessions, and exercises.
+- Cloudflare R2 signed URL flow for video upload and playback.
+- Flutter client with authentication, students, workouts, and plan detail flows.
+- SQL migrations for users, refresh tokens, students, workouts, and videos.
 
-```
-internal/
-├── domain/          # Entidades e regras de negócio puras
-├── application/     # Use Cases (orquestração)
-├── adapters/        # HTTP handlers, repositórios, storage
-└── infrastructure/  # Config, crypto, JWT, logger
-```
+## Local Setup
 
-Documentação completa: [docs/architecture/SAD.md](docs/architecture/SAD.md)
+### Requirements
 
-## Segurança
+- Go 1.25.x
+- Flutter 3.41.x / Dart 3.11.x
+- Docker Desktop
+- Git
 
-- **CPF**: criptografado com AES-256-GCM + AAD; hash HMAC-SHA256 para buscas
-- **Senhas**: bcrypt (custo 12) + pepper externo ao banco
-- **JWT**: RS256, access token 15min + refresh token 7 dias com Token Family Rotation
-- **Vídeos**: Signed URLs com TTL de 5 minutos (Cloudflare R2)
-- **OWASP Top 10**: mitigações implementadas em todos os endpoints
+### Environment
 
-## Setup Local
-
-### Pré-requisitos
-
-- [Go 1.23+](https://go.dev/dl/)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- [Git](https://git-scm.com/)
-
-### 1. Clonar o repositório
-
-```bash
-git clone https://github.com/SCAPUTO88/fit-brother.git
-cd fit-brother
-```
-
-### 2. Configurar variáveis de ambiente
+Create a local env file:
 
 ```bash
 cp .env.example .env
-# Edite o .env com suas credenciais
 ```
 
-### 3. Gerar chaves JWT (se ainda não existirem)
+Generate local JWT keys:
 
 ```bash
-# Linux/Mac ou Git Bash no Windows:
 openssl genrsa -out secrets/jwt_rsa.pem 2048
 openssl rsa -in secrets/jwt_rsa.pem -pubout -out secrets/jwt_rsa.pub.pem
-
-# Gerar secrets de criptografia:
-openssl rand -base64 32   # para AES_KEY
-openssl rand -base64 32   # para CPF_HMAC_SECRET
-openssl rand -base64 32   # para PASSWORD_PEPPER
 ```
 
-### 4. Subir infraestrutura local
+Generate crypto secrets:
 
 ```bash
-cd docker
-docker-compose up -d postgres redis adminer
+openssl rand -base64 32   # AES_KEY
+openssl rand -base64 32   # CPF_HMAC_SECRET
+openssl rand -base64 32   # PASSWORD_PEPPER
 ```
 
-- **PostgreSQL**: `localhost:5432`
-- **Redis**: `localhost:6379`
-- **Adminer (UI do DB)**: http://localhost:8081
-
-### 5. Rodar as migrações
+### Start Local Services
 
 ```bash
-# Em breve — Sprint 1
+docker-compose -f docker/docker-compose.yml up -d postgres redis adminer
 ```
 
-### 6. Rodar a API
+Services:
+
+- PostgreSQL: `localhost:5432`
+- Redis: `localhost:6379`
+- Adminer: `http://localhost:8081`
+
+### Run Migrations
+
+```bash
+go run ./scripts/migrate.go up
+```
+
+Rollback all migrations:
+
+```bash
+go run ./scripts/migrate.go down
+```
+
+### Run Backend
 
 ```bash
 go run ./cmd/api
 ```
 
-A API estará disponível em **http://localhost:8080**
-
-### Health check
+Health check:
 
 ```bash
-curl http://localhost:8080/health
-# {"status":"ok","env":"development","version":"1.0.0"}
+curl http://localhost:8080/v1/health
 ```
 
-## Testes
+### Run Flutter Web
 
 ```bash
-# Testes unitários
-go test -v -race ./internal/...
+cd fit_brother_app
+flutter pub get
+flutter run -d chrome
+```
 
-# Testes de integração
+## API Overview
+
+Base path: `/v1`
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/health` | API health check |
+| POST | `/auth/login` | Login |
+| POST | `/auth/refresh` | Refresh access token |
+| POST | `/auth/logout` | Logout |
+| POST | `/students` | Create student |
+| GET | `/students` | List students |
+| GET | `/students/:id` | Get student detail |
+| DELETE | `/students/:id` | Anonymize student |
+| POST | `/workouts` | Create workout plan |
+| GET | `/workouts` | List plans for current user |
+| GET | `/workouts/:id` | Get plan details |
+| POST | `/workouts/:id/sessions` | Create workout session |
+| POST | `/workouts/sessions/:session_id/exercises` | Create exercise |
+| POST | `/videos/upload-url` | Create signed upload URL |
+| POST | `/videos` | Confirm uploaded video metadata |
+| GET | `/videos/exercises/:exercise_id/signed-url` | Create signed playback URL |
+
+## Testing and Checks
+
+Backend:
+
+```bash
+go test -v ./...
 go test -v -tags integration ./tests/integration/...
-
-# Cobertura
-go test -coverprofile=coverage.out ./internal/...
-go tool cover -html=coverage.out
+go build ./cmd/api
 ```
 
-## Endpoints (em construção)
+Flutter:
 
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| `GET` | `/health` | Health check |
-| — | — | Sprint 1: Auth (login, refresh, logout) |
-| — | — | Sprint 2: Alunos + Biometria |
-| — | — | Sprint 3: Treinos + Exercícios |
-| — | — | Sprint 4: Vídeos (Signed URLs) |
+```bash
+cd fit_brother_app
+flutter analyze
+flutter test
+```
 
-## Conformidade LGPD
+CI additionally runs `golangci-lint`, `gofmt -l .`, `govulncheck`, race-enabled
+Go tests, Linux binary build, Docker image build, and Railway deploy on `main`.
 
-- Dados pessoais (CPF) criptografados em repouso
-- Soft delete com anonimização para direito ao esquecimento (Art. 18)
-- Trilha de auditoria completa (`audit_logs`)
-- Consentimento registrado no cadastro
+## Security Notes
+
+- CPF is encrypted with AES-256-GCM and searchable through HMAC-SHA256.
+- Passwords use bcrypt plus `PASSWORD_PEPPER`.
+- JWT uses RS256 with local key files and provider-managed secrets in production.
+- Videos are private in R2 and accessed only through short-lived signed URLs.
+- Do not commit `.env`, JWT keys, peppers, R2 credentials, Supabase credentials,
+  Upstash credentials, or production secrets.
 
 ## Roadmap
 
-- [x] Sprint 0 — Fundação (estrutura, config, CI/CD)
-- [ ] Sprint 1 — Autenticação JWT
-- [ ] Sprint 2 — Módulo de Alunos
-- [ ] Sprint 3 — Módulo de Treinos
-- [ ] Sprint 4 — Storage de Vídeos
-- [ ] Sprint 5 — App Flutter
-- [ ] Sprint 6 — Painel Admin
-- [ ] Sprint 7 — Launch 🚀
+The current roadmap is tracked in [docs/plano-de-ataque.md](docs/plano-de-ataque.md):
 
----
+1. Baseline and security hygiene.
+2. Supabase production database and migrations.
+3. Railway backend deploy.
+4. Upstash Redis rate limiting and short cache.
+5. API contract and authorization tightening.
+6. R2 video flow hardening.
+7. Flutter Web/PWA visual refresh.
+8. Frontend deploy.
+9. Operations and observability.
+10. Mobile app packaging.
 
-Desenvolvido com ❤️ usando Go + Hexagonal Architecture

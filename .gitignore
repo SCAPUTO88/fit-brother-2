@@ -47,3 +47,5 @@ logs/
 tmp/
 
 .flutter_sdk/
+AGENTS.md
+docs/

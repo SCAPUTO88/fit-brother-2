@@ -75,6 +75,13 @@ func (m *MockStudentRepo) GetByCPFHash(ctx context.Context, cpfHash string) (*do
 	}
 	return nil, args.Error(1)
 }
+func (m *MockStudentRepo) ListAll(ctx context.Context) ([]*domainS.StudentBaseInfo, error) {
+	args := m.Called(ctx)
+	if students := args.Get(0); students != nil {
+		return students.([]*domainS.StudentBaseInfo), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
 func (m *MockStudentRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)

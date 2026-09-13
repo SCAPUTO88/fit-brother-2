@@ -54,6 +54,9 @@ func (m *HTTPMockStudentRepo) GetByID(ctx context.Context, id uuid.UUID) (*domai
 func (m *HTTPMockStudentRepo) GetByCPFHash(ctx context.Context, cpf string) (*domainS.Student, error) {
 	return nil, nil
 }
+func (m *HTTPMockStudentRepo) ListAll(ctx context.Context) ([]*domainS.StudentBaseInfo, error) {
+	return nil, nil
+}
 func (m *HTTPMockStudentRepo) Delete(ctx context.Context, id uuid.UUID) error { return nil }
 func (m *HTTPMockStudentRepo) SaveBiometric(ctx context.Context, b *domainS.BiometricData) error {
 	return nil
@@ -72,7 +75,7 @@ func TestStudentHandler_Create(t *testing.T) {
 	sr := new(HTTPMockStudentRepo)
 
 	uc := student.NewCreateStudentUseCase(ur, sr, passSvc, encryptor, hashGen)
-	h := handler.NewStudentHandler(uc, nil, nil) // Mock get/anonymize as nil for now
+	h := handler.NewStudentHandler(uc, nil, nil, nil) // Mock read/list/anonymize as nil for now
 
 	router := gin.New()
 	group := router.Group("")

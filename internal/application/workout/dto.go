@@ -1,7 +1,7 @@
 package workout
 
 type CreatePlanInput struct {
-	TrainerID   string `json:"trainer_id" binding:"required,uuid"`
+	TrainerID   string `json:"trainer_id"`
 	StudentID   string `json:"student_id" binding:"required,uuid"`
 	Title       string `json:"title" binding:"required,min=3"`
 	Description string `json:"description"`
@@ -54,4 +54,14 @@ type ExerciseOutput struct {
 	Notes            string `json:"notes"`
 	VideoURL         string `json:"video_url"`
 	Position         int    `json:"position"`
+}
+
+type SessionDetailsOutput struct {
+	Session   SessionOutput    `json:"session"`
+	Exercises []ExerciseOutput `json:"exercises"`
+}
+
+type PlanDetailsOutput struct {
+	Plan     PlanOutput             `json:"plan"`
+	Sessions []SessionDetailsOutput `json:"sessions"`
 }

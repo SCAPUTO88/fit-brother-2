@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,11 +40,21 @@ func NewLoginUseCase(
 
 func (u *LoginUseCase) Execute(ctx context.Context, input LoginInput) (*TokenOutput, error) {
 	usr, err := u.userRepo.GetByEmail(ctx, input.Email)
-	if err != nil || usr == nil || !usr.IsActive {
+	if err != nil {
+		log.Printf("Login falhou DB: %v", err)
+		return nil, errors.New("credenciais inválidas")
+	}
+	if usr == nil {
+		log.Printf("Login falhou: user nil")
+		return nil, errors.New("credenciais inválidas")
+	}
+	if !usr.IsActive {
+		log.Printf("Login falhou: inativo")
 		return nil, errors.New("credenciais inválidas")
 	}
 
 	if !u.passwordService.Check(input.Password, usr.PasswordHash) {
+		log.Printf("Login falhou: senha não bate. Hasheada=%s", usr.PasswordHash)
 		return nil, errors.New("credenciais inválidas")
 	}
 

@@ -9,13 +9,19 @@ import (
 )
 
 type Student struct {
-	ID           uuid.UUID
-	UserID       uuid.UUID
-	CPFEncrypted string
-	CPFHash      string
-	CreatedAt    time.Time
+	ID           uuid.UUID `db:"id"`
+	UserID       uuid.UUID `db:"user_id"`
+	CPFEncrypted string    `db:"cpf_encrypted"`
+	CPFHash      string    `db:"cpf_hash"`
+	CreatedAt    time.Time `db:"created_at"`
 
 	cleanCPF string
+}
+
+type StudentBaseInfo struct {
+	ID       string `db:"id" json:"id"`
+	FullName string `db:"full_name" json:"full_name"`
+	Email    string `db:"email" json:"email"`
 }
 
 var numericOnlyRegex = regexp.MustCompile(`[^0-9]+`)
@@ -47,14 +53,14 @@ func (s *Student) ClearSensitiveData() {
 }
 
 type BiometricData struct {
-	ID                uuid.UUID
-	StudentID         uuid.UUID
-	WeightKg          float64
-	HeightCm          float64
-	BMI               float64
-	BodyFatPercentage float64
-	RecordedBy        uuid.UUID
-	RecordedAt        time.Time
+	ID                uuid.UUID `db:"id"`
+	StudentID         uuid.UUID `db:"student_id"`
+	WeightKg          float64   `db:"weight_kg"`
+	HeightCm          float64   `db:"height_cm"`
+	BMI               float64   `db:"bmi"`
+	BodyFatPercentage float64   `db:"body_fat_percentage"`
+	RecordedBy        uuid.UUID `db:"recorded_by"`
+	RecordedAt        time.Time `db:"recorded_at"`
 }
 
 func NewBiometricRecord(studentID, trainerID uuid.UUID, weightKg, heightCm, fat float64) (*BiometricData, error) {

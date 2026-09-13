@@ -73,20 +73,22 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 
 	createStudentUC := student.NewCreateStudentUseCase(userRepo, studentRepo, passwordSvc, aesEncryptor, hashGen)
 	getStudentUC := student.NewGetStudentUseCase(userRepo, studentRepo, aesEncryptor)
+	listStudentsUC := student.NewListStudentsUseCase(studentRepo)
 	anonymizeStudentUC := student.NewAnonymizeStudentUseCase(userRepo, studentRepo)
 
 	createPlanUC := appworkout.NewCreatePlanUseCase(workoutRepo)
 	createSessionUC := appworkout.NewCreateSessionUseCase(workoutRepo)
 	createExerciseUC := appworkout.NewCreateExerciseUseCase(workoutRepo)
 	listPlansUC := appworkout.NewListPlansUseCase(workoutRepo)
+	getPlanDetailsUC := appworkout.NewGetPlanDetailsUseCase(workoutRepo)
 
 	requestUploadURLUC := appvideo.NewRequestUploadURLUseCase(r2Storage, &cfg.R2)
 	confirmUploadUC := appvideo.NewConfirmUploadUseCase(videoRepo, r2Storage)
 	getSignedURLUC := appvideo.NewGetSignedURLUseCase(videoRepo, r2Storage, &cfg.R2)
 
 	authHandler := handler.NewAuthHandler(loginUC, refreshUC, logoutUC)
-	studentHandler := handler.NewStudentHandler(createStudentUC, getStudentUC, anonymizeStudentUC)
-	workoutHandler := handler.NewWorkoutHandler(createPlanUC, createSessionUC, createExerciseUC, listPlansUC)
+	studentHandler := handler.NewStudentHandler(createStudentUC, getStudentUC, listStudentsUC, anonymizeStudentUC)
+	workoutHandler := handler.NewWorkoutHandler(createPlanUC, createSessionUC, createExerciseUC, listPlansUC, getPlanDetailsUC)
 	videoHandler := handler.NewVideoHandler(requestUploadURLUC, confirmUploadUC, getSignedURLUC)
 
 	v1 := router.Group("/v1")
