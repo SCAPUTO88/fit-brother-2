@@ -82,7 +82,7 @@ openssl rand -base64 32   # PASSWORD_PEPPER
 ### Start Local Services
 
 ```bash
-docker-compose -f docker/docker-compose.yml up -d postgres redis adminer
+docker compose -f docker/docker-compose.yml up -d
 ```
 
 Services:
@@ -90,6 +90,7 @@ Services:
 - PostgreSQL: `localhost:5432`
 - Redis: `localhost:6379`
 - Adminer: `http://localhost:8081`
+- API: `http://localhost:8080`
 
 ### Run Migrations
 
@@ -103,7 +104,10 @@ Rollback all migrations:
 go run ./scripts/migrate.go down
 ```
 
-### Run Backend
+### Run Backend Outside Docker
+
+The Compose command already starts the API. For local debugging without the
+API container:
 
 ```bash
 go run ./cmd/api

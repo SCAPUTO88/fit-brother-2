@@ -2,6 +2,7 @@ package http
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -28,14 +29,7 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 
 	router := gin.New()
 	router.Use(gin.Recovery())
-	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5000", "http://localhost:5001", "http://localhost:8081", "https://fitbrother.app"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
-		MaxAge:           12 * time.Hour,
-	}))
+	router.Use(cors.New(newCORSConfig(cfg.CORS.AllowedOrigins)))
 
 	passwordSvc, err := crypto.NewPasswordService(cfg.Crypto.PasswordPepper)
 	if err != nil {
@@ -108,4 +102,22 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 	}
 
 	return router, nil
+}
+
+func newCORSConfig(allowedOrigins string) cors.Config {
+	origins := make([]string, 0)
+	for _, origin := range strings.Split(allowedOrigins, ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+
+	return cors.Config{
+		AllowOrigins:     origins,
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}
 }

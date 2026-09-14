@@ -113,6 +113,23 @@ go run ./scripts/migrate.go up
 go run ./scripts/migrate.go down
 ```
 
+### Aplicacao no Supabase e rollback
+
+O migrador usa somente `DATABASE_URL`. Para producao, defina no terminal a
+connection string do projeto Supabase com `sslmode=require` e execute o mesmo
+comando `up`; nao grave a credencial em arquivos versionados.
+
+```powershell
+$env:DATABASE_URL = 'postgres://...?...sslmode=require'
+go run ./scripts/migrate.go up
+```
+
+`down` reverte **todas** as migrations, nao apenas a ultima. Antes de usa-lo
+em producao: confirme o projeto presente em `DATABASE_URL`, interrompa escritas
+da API, tenha um backup valido e teste o procedimento no PostgreSQL local.
+Depois do rollback, verifique a versao do schema e a saude da API antes de
+liberar trafego novamente.
+
 ### Modelo de Dados Atual
 
 ```mermaid
