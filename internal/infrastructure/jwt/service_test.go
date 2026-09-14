@@ -93,3 +93,20 @@ func TestJWTService(t *testing.T) {
 		assert.Nil(t, claims)
 	})
 }
+
+func TestNewServiceFromPEM(t *testing.T) {
+	privPath, pubPath := generateTempRSAKeys(t)
+	privatePEM, err := os.ReadFile(privPath)
+	require.NoError(t, err)
+	publicPEM, err := os.ReadFile(pubPath)
+	require.NoError(t, err)
+
+	svc, err := jwt.NewServiceFromPEM(string(privatePEM), string(publicPEM), "test-issuer")
+	require.NoError(t, err)
+
+	token, err := svc.GenerateAccessToken(uuid.New(), "TRAINER", "session", time.Minute)
+	require.NoError(t, err)
+
+	_, err = svc.Verify(token)
+	require.NoError(t, err)
+}

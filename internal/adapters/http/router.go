@@ -36,7 +36,7 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 		return nil, fmt.Errorf("falha configurando auth crypto: %w", err)
 	}
 
-	jwtSvc, err := jwt.NewService(cfg.JWT.PrivateKeyPath, cfg.JWT.PublicKeyPath, "fit-brother-api")
+	jwtSvc, err := newJWTService(cfg.JWT)
 	if err != nil {
 		return nil, fmt.Errorf("falha configurando jwt service: %w", err)
 	}
@@ -102,6 +102,17 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 	}
 
 	return router, nil
+}
+
+func newJWTService(cfg config.JWTConfig) (*jwt.Service, error) {
+	if cfg.PrivateKeyPEM != "" || cfg.PublicKeyPEM != "" {
+		if cfg.PrivateKeyPEM == "" || cfg.PublicKeyPEM == "" {
+			return nil, fmt.Errorf("JWT_PRIVATE_KEY_PEM e JWT_PUBLIC_KEY_PEM devem ser definidos juntos")
+		}
+		return jwt.NewServiceFromPEM(cfg.PrivateKeyPEM, cfg.PublicKeyPEM, "fit-brother-api")
+	}
+
+	return jwt.NewService(cfg.PrivateKeyPath, cfg.PublicKeyPath, "fit-brother-api")
 }
 
 func newCORSConfig(allowedOrigins string) cors.Config {

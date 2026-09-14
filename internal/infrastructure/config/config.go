@@ -42,6 +42,8 @@ type CryptoConfig struct {
 type JWTConfig struct {
 	PrivateKeyPath  string
 	PublicKeyPath   string
+	PrivateKeyPEM   string
+	PublicKeyPEM    string
 	AccessTokenTTL  time.Duration
 	RefreshTokenTTL time.Duration
 }
@@ -65,7 +67,7 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		App: AppConfig{
 			Env:     getEnv("APP_ENV", "development"),
-			Port:    getEnv("APP_PORT", "8080"),
+			Port:    resolveAppPort(),
 			BaseURL: getEnv("APP_BASE_URL", "http://localhost:8080"),
 		},
 		Database: DatabaseConfig{
@@ -80,8 +82,10 @@ func Load() (*Config, error) {
 			PasswordPepper: requireEnv("PASSWORD_PEPPER"),
 		},
 		JWT: JWTConfig{
-			PrivateKeyPath:  requireEnv("JWT_PRIVATE_KEY_PATH"),
-			PublicKeyPath:   requireEnv("JWT_PUBLIC_KEY_PATH"),
+			PrivateKeyPath:  getEnv("JWT_PRIVATE_KEY_PATH", ""),
+			PublicKeyPath:   getEnv("JWT_PUBLIC_KEY_PATH", ""),
+			PrivateKeyPEM:   getEnv("JWT_PRIVATE_KEY_PEM", ""),
+			PublicKeyPEM:    getEnv("JWT_PUBLIC_KEY_PEM", ""),
 			AccessTokenTTL:  parseDuration("JWT_ACCESS_TOKEN_TTL", 15*time.Minute),
 			RefreshTokenTTL: parseDuration("JWT_REFRESH_TOKEN_TTL", 7*24*time.Hour),
 		},
@@ -99,6 +103,10 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func resolveAppPort() string {
+	return getEnv("APP_PORT", getEnv("PORT", "8080"))
 }
 
 func (c *AppConfig) IsDevelopment() bool {

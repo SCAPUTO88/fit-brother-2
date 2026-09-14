@@ -28,15 +28,25 @@ func NewService(privateKeyPath, publicKeyPath, issuer string) (*Service, error) 
 	if err != nil {
 		return nil, errors.New("falha ao ler private key: " + err.Error())
 	}
-	privKey, err := jwt.ParseRSAPrivateKeyFromPEM(privBytes)
-	if err != nil {
-		return nil, errors.New("falha ao fazer parse da private key: " + err.Error())
-	}
 
 	pubBytes, err := os.ReadFile(publicKeyPath)
 	if err != nil {
 		return nil, errors.New("falha ao ler public key: " + err.Error())
 	}
+
+	return newService(privBytes, pubBytes, issuer)
+}
+
+func NewServiceFromPEM(privateKeyPEM, publicKeyPEM, issuer string) (*Service, error) {
+	return newService([]byte(privateKeyPEM), []byte(publicKeyPEM), issuer)
+}
+
+func newService(privBytes, pubBytes []byte, issuer string) (*Service, error) {
+	privKey, err := jwt.ParseRSAPrivateKeyFromPEM(privBytes)
+	if err != nil {
+		return nil, errors.New("falha ao fazer parse da private key: " + err.Error())
+	}
+
 	pubKey, err := jwt.ParseRSAPublicKeyFromPEM(pubBytes)
 	if err != nil {
 		return nil, errors.New("falha ao fazer parse da public key: " + err.Error())

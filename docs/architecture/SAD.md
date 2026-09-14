@@ -37,7 +37,7 @@ Os objetivos arquiteturais sao:
 | Cache | Upstash Redis | Rate limit, sessoes auxiliares e cache curto |
 | Storage | Cloudflare R2 | Storage S3-compatible, bom para videos |
 | CDN/DNS | Cloudflare Free | Dominio, cache, protecao basica e proximidade com R2 |
-| Backend deploy | Railway | Ja existe workflow de deploy no CI |
+| Backend deploy | Google Cloud Run | Executa a imagem Go existente e escala a zero |
 | App deploy | Cloudflare Pages recomendado; Vercel aceitavel | Free-tier e bom encaixe com Cloudflare |
 | CI/CD | GitHub Actions | Lint, security scan, testes, build e deploy |
 
@@ -56,7 +56,7 @@ docs                    Arquitetura e planos
 ```
 
 O backend segue arquitetura hexagonal. O dominio nao depende de Gin, sqlx,
-Supabase, Redis, R2 ou Railway. Integracoes externas ficam em adapters ou
+Supabase, Redis, R2 ou Cloud Run. Integracoes externas ficam em adapters ou
 infrastructure.
 
 ```mermaid
@@ -70,7 +70,7 @@ flowchart LR
     API --> Redis[(Upstash Redis)]
     Cloudflare[Cloudflare DNS/CDN] --> App
     Cloudflare --> R2
-    GitHub[GitHub Actions] --> Railway[Railway Backend]
+    GitHub[GitHub Actions] --> CloudRun[Google Cloud Run Backend]
     GitHub --> Pages[Cloudflare Pages/Vercel App]
 ```
 
@@ -88,7 +88,7 @@ flowchart LR
 | RF-06 | Upload de video demonstrativo | `video`, R2 signed upload URL |
 | RF-07 | Playback seguro de video | `video`, R2 signed read URL |
 | RF-08 | App responsivo com experiencia fitness | Flutter, Riverpod, GoRouter, Dio |
-| RF-09 | Deploy free-tier | Railway, Supabase, Upstash, Cloudflare |
+| RF-09 | Deploy free-tier | Cloud Run, Supabase, Upstash, Cloudflare |
 
 ---
 
@@ -374,20 +374,19 @@ hash de senha antes de qualquer ambiente compartilhado ou deploy publico.
 flowchart TB
     Dev[GitHub main] --> CI[GitHub Actions]
     CI --> Tests[Go tests, lint, govulncheck, Docker build]
-    Tests --> Railway[Railway Go API]
+    Tests --> CloudRun[Google Cloud Run Go API]
     Tests --> Pages[Cloudflare Pages Flutter Web]
-    Railway --> Supabase[(Supabase Postgres)]
-    Railway --> Upstash[(Upstash Redis)]
-    Railway --> R2[(Cloudflare R2)]
-    Pages --> Railway
+    CloudRun --> Supabase[(Supabase Postgres)]
+    CloudRun --> Upstash[(Upstash Redis)]
+    CloudRun --> R2[(Cloudflare R2)]
+    Pages --> CloudRun
     Cloudflare[Cloudflare DNS/CDN] --> Pages
     Cloudflare --> R2
 ```
 
-Railway continua sendo o deploy do backend porque o workflow ja contem
-`railway up --service fit-brother-api`. Cloudflare Pages e recomendado para o
-Flutter Web por consolidar DNS/CDN/R2; Vercel segue viavel se for mais rapido
-para o primeiro publish.
+Cloud Run substitui Railway para manter a API Go em um container que escala a
+zero. Cloudflare Pages e recomendado para o Flutter Web por consolidar
+DNS/CDN/R2; Vercel segue viavel se for mais rapido para o primeiro publish.
 
 ---
 
@@ -446,7 +445,7 @@ Evolucao:
 ## 14. Criterios de Aceite da Arquitetura
 
 - Supabase e a base oficial de producao; Postgres local replica o contrato.
-- Railway faz deploy do backend com Dockerfile atual.
+- Cloud Run faz deploy do backend com Dockerfile atual e escala a zero.
 - Flutter Web/PWA e o primeiro cliente publicado.
 - R2 armazena videos; backend nunca faz proxy de arquivo grande.
 - Redis e usado primeiro para rate limit, depois cache curto.

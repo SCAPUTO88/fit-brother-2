@@ -33,7 +33,7 @@ implementation roadmap.
 | Cache | Upstash Redis in production; Redis 7 locally |
 | Video storage | Cloudflare R2 with signed URLs |
 | CDN/DNS | Cloudflare Free |
-| Backend deploy | Railway |
+| Backend deploy | Google Cloud Run |
 | App deploy | Cloudflare Pages recommended; Vercel acceptable |
 | App | Flutter 3.41.x, Dart 3.11.4, Riverpod, GoRouter, Dio |
 | CI/CD | GitHub Actions |
@@ -169,7 +169,8 @@ flutter test
 ```
 
 CI additionally runs `golangci-lint`, `gofmt -l .`, `govulncheck`, race-enabled
-Go tests, Linux binary build, Docker image build, and Railway deploy on `main`.
+Go tests, Linux binary build, and Docker image build. Cloud Run deployment is
+configured separately from the current workflow.
 
 ## Security Notes
 
@@ -186,7 +187,7 @@ The current roadmap is tracked in [docs/plano-de-ataque.md](docs/plano-de-ataque
 
 1. Baseline and security hygiene.
 2. Supabase production database and migrations.
-3. Railway backend deploy.
+3. Google Cloud Run backend deploy.
 4. Upstash Redis rate limiting and short cache.
 5. API contract and authorization tightening.
 6. R2 video flow hardening.
