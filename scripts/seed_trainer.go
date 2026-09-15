@@ -11,26 +11,27 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 
-	"github.com/joho/godotenv"
-
-	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/config"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/crypto"
 )
 
 func main() {
-	_ = godotenv.Load()
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("config: %v", err)
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		log.Fatal("DATABASE_URL is required")
 	}
 
-	db, err := sqlx.Open("pgx", cfg.Database.URL)
+	passwordPepper := os.Getenv("PASSWORD_PEPPER")
+	if passwordPepper == "" {
+		log.Fatal("PASSWORD_PEPPER is required")
+	}
+
+	db, err := sqlx.Open("pgx", databaseURL)
 	if err != nil {
 		log.Fatalf("db: %v", err)
 	}
 	defer db.Close()
 
-	passwordSvc, err := crypto.NewPasswordService(cfg.Crypto.PasswordPepper)
+	passwordSvc, err := crypto.NewPasswordService(passwordPepper)
 	if err != nil {
 		log.Fatalf("crypto: %v", err)
 	}
@@ -66,5 +67,5 @@ func main() {
 		log.Fatalf("update: %v", err)
 	}
 
-	fmt.Printf("✅ Trainer criado/atualizado: %s | senha: %s\n", email, password)
+	fmt.Printf("✅ Trainer criado/atualizado: %s\n", email)
 }

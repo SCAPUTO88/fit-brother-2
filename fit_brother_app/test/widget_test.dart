@@ -9,4 +9,5 @@ void main() {
     await tester.pumpWidget(const ProviderScope(child: FitBrotherApp()));
     expect(find.byType(MaterialApp), findsOneWidget);
   });
+
 }
