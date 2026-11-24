@@ -25,6 +25,22 @@ func main() {
 		log.Fatal("PASSWORD_PEPPER is required")
 	}
 
+	email := os.Getenv("SEED_TRAINER_EMAIL")
+	if email == "" {
+		email = "trainer@fitbrother.com"
+	}
+	if len(os.Args) > 1 {
+		email = os.Args[1]
+	}
+
+	password := os.Getenv("SEED_TRAINER_PASSWORD")
+	if len(os.Args) > 2 {
+		password = os.Args[2]
+	}
+	if password == "" {
+		log.Fatal("SEED_TRAINER_PASSWORD env var or second CLI argument is required")
+	}
+
 	db, err := sqlx.Open("pgx", databaseURL)
 	if err != nil {
 		log.Fatalf("db: %v", err)
@@ -34,16 +50,6 @@ func main() {
 	passwordSvc, err := crypto.NewPasswordService(passwordPepper)
 	if err != nil {
 		log.Fatalf("crypto: %v", err)
-	}
-
-	email := "trainer@fitbrother.com"
-	password := "Senha123!"
-
-	if len(os.Args) > 1 {
-		email = os.Args[1]
-	}
-	if len(os.Args) > 2 {
-		password = os.Args[2]
 	}
 
 	hash, err := passwordSvc.Hash(password)
@@ -61,8 +67,7 @@ func main() {
 		log.Fatalf("insert: %v", err)
 	}
 
-	// Atualiza o hash se o usuário já existia
-	_, err = db.Exec(`UPDATE users SET password_hash = $1, role = 'TRAINER' WHERE email = $2`, hash, email)
+	_, err = db.Exec(`UPDATE users SET password_hash = $1, role = 'TRAINER', is_active = true, deleted_at = NULL WHERE email = $2`, hash, email)
 	if err != nil {
 		log.Fatalf("update: %v", err)
 	}

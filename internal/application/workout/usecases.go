@@ -3,34 +3,50 @@ package workout
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/SCAPUTO88/fit-brother/internal/domain/errs"
+	domainS "github.com/SCAPUTO88/fit-brother/internal/domain/student"
+	domainU "github.com/SCAPUTO88/fit-brother/internal/domain/user"
 	domain "github.com/SCAPUTO88/fit-brother/internal/domain/workout"
 )
 
 type CreatePlanUseCase struct {
-	repo domain.Repository
+	repo     domain.Repository
+	studRepo domainS.Repository
 }
 
-func NewCreatePlanUseCase(r domain.Repository) *CreatePlanUseCase {
-	return &CreatePlanUseCase{repo: r}
+func NewCreatePlanUseCase(r domain.Repository, sr domainS.Repository) *CreatePlanUseCase {
+	return &CreatePlanUseCase{repo: r, studRepo: sr}
 }
 
 func (uc *CreatePlanUseCase) Execute(ctx context.Context, input CreatePlanInput) (*PlanOutput, error) {
 	trainerID, err := uuid.Parse(input.TrainerID)
 	if err != nil {
-		return nil, errors.New("trainer_id inválido")
+		return nil, fmt.Errorf("%w: trainer_id inválido", errs.ErrInvalidInput)
 	}
 	studentID, err := uuid.Parse(input.StudentID)
 	if err != nil {
-		return nil, errors.New("student_id inválido")
+		return nil, fmt.Errorf("%w: student_id inválido", errs.ErrInvalidInput)
+	}
+
+	stud, err := uc.studRepo.GetByID(ctx, studentID)
+	if err != nil {
+		return nil, errors.New("falha ao verificar vínculo do aluno")
+	}
+	if stud == nil {
+		return nil, fmt.Errorf("%w: aluno não encontrado", errs.ErrNotFound)
+	}
+	if stud.TrainerID == nil || *stud.TrainerID != trainerID {
+		return nil, fmt.Errorf("%w: este aluno não pertence ao treinador autenticado", errs.ErrForbidden)
 	}
 
 	plan, err := domain.NewWorkoutPlan(trainerID, studentID, input.Title, input.Description)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", errs.ErrInvalidInput, err)
 	}
 
 	if err := uc.repo.CreatePlan(ctx, plan); err != nil {
@@ -56,20 +72,26 @@ func NewCreateSessionUseCase(r domain.Repository) *CreateSessionUseCase {
 	return &CreateSessionUseCase{repo: r}
 }
 
-func (uc *CreateSessionUseCase) Execute(ctx context.Context, input CreateSessionInput) (*SessionOutput, error) {
+func (uc *CreateSessionUseCase) Execute(ctx context.Context, trainerID uuid.UUID, input CreateSessionInput) (*SessionOutput, error) {
 	planID, err := uuid.Parse(input.WorkoutPlanID)
 	if err != nil {
-		return nil, errors.New("workout_plan_id inválido")
+		return nil, fmt.Errorf("%w: workout_plan_id inválido", errs.ErrInvalidInput)
 	}
 
 	plan, err := uc.repo.GetPlanByID(ctx, planID)
-	if err != nil || plan == nil {
-		return nil, errors.New("plano de treino não encontrado")
+	if err != nil {
+		return nil, errors.New("falha ao buscar plano de treino")
+	}
+	if plan == nil {
+		return nil, fmt.Errorf("%w: plano de treino não encontrado", errs.ErrNotFound)
+	}
+	if plan.TrainerID != trainerID {
+		return nil, fmt.Errorf("%w: acesso negado ao plano de outro treinador", errs.ErrForbidden)
 	}
 
 	session, err := domain.NewWorkoutSession(planID, input.Title, input.DayOfWeek)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", errs.ErrInvalidInput, err)
 	}
 	session.Notes = input.Notes
 
@@ -95,20 +117,34 @@ func NewCreateExerciseUseCase(r domain.Repository) *CreateExerciseUseCase {
 	return &CreateExerciseUseCase{repo: r}
 }
 
-func (uc *CreateExerciseUseCase) Execute(ctx context.Context, input CreateExerciseInput) (*ExerciseOutput, error) {
+func (uc *CreateExerciseUseCase) Execute(ctx context.Context, trainerID uuid.UUID, input CreateExerciseInput) (*ExerciseOutput, error) {
 	sessionID, err := uuid.Parse(input.WorkoutSessionID)
 	if err != nil {
-		return nil, errors.New("workout_session_id inválido")
+		return nil, fmt.Errorf("%w: workout_session_id inválido", errs.ErrInvalidInput)
 	}
 
 	session, err := uc.repo.GetSessionByID(ctx, sessionID)
-	if err != nil || session == nil {
-		return nil, errors.New("sessão não encontrada")
+	if err != nil {
+		return nil, errors.New("falha ao buscar sessão")
+	}
+	if session == nil {
+		return nil, fmt.Errorf("%w: sessão não encontrada", errs.ErrNotFound)
+	}
+
+	plan, err := uc.repo.GetPlanByID(ctx, session.WorkoutPlanID)
+	if err != nil {
+		return nil, errors.New("falha ao buscar plano de treino")
+	}
+	if plan == nil {
+		return nil, fmt.Errorf("%w: plano de treino não encontrado", errs.ErrNotFound)
+	}
+	if plan.TrainerID != trainerID {
+		return nil, fmt.Errorf("%w: acesso negado ao plano de outro treinador", errs.ErrForbidden)
 	}
 
 	exercise, err := domain.NewExercise(sessionID, input.Name, input.Sets, input.Reps, input.RestSeconds, input.Position)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", errs.ErrInvalidInput, err)
 	}
 	exercise.Notes = input.Notes
 	exercise.VideoURL = input.VideoURL
@@ -131,15 +167,24 @@ func (uc *CreateExerciseUseCase) Execute(ctx context.Context, input CreateExerci
 }
 
 type ListPlansUseCase struct {
-	repo domain.Repository
+	repo     domain.Repository
+	studRepo domainS.Repository
 }
 
-func NewListPlansUseCase(r domain.Repository) *ListPlansUseCase {
-	return &ListPlansUseCase{repo: r}
+func NewListPlansUseCase(r domain.Repository, sr domainS.Repository) *ListPlansUseCase {
+	return &ListPlansUseCase{repo: r, studRepo: sr}
 }
 
-func (uc *ListPlansUseCase) ByStudent(ctx context.Context, studentID uuid.UUID) ([]*PlanOutput, error) {
-	plans, err := uc.repo.ListPlansByStudent(ctx, studentID)
+func (uc *ListPlansUseCase) ByStudent(ctx context.Context, tokenUserID uuid.UUID) ([]*PlanOutput, error) {
+	stud, err := uc.studRepo.GetByUserID(ctx, tokenUserID)
+	if err != nil {
+		return nil, errors.New("falha ao resolver perfil do aluno")
+	}
+	if stud == nil {
+		return []*PlanOutput{}, nil
+	}
+
+	plans, err := uc.repo.ListPlansByStudent(ctx, stud.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -171,17 +216,18 @@ func toPlansOutput(plans []*domain.WorkoutPlan) []*PlanOutput {
 }
 
 type GetPlanDetailsUseCase struct {
-	repo domain.Repository
+	repo     domain.Repository
+	studRepo domainS.Repository
 }
 
-func NewGetPlanDetailsUseCase(r domain.Repository) *GetPlanDetailsUseCase {
-	return &GetPlanDetailsUseCase{repo: r}
+func NewGetPlanDetailsUseCase(r domain.Repository, sr domainS.Repository) *GetPlanDetailsUseCase {
+	return &GetPlanDetailsUseCase{repo: r, studRepo: sr}
 }
 
 func (uc *GetPlanDetailsUseCase) Execute(ctx context.Context, planIDStr string, tokenUserID uuid.UUID, role string) (*PlanDetailsOutput, error) {
 	planID, err := uuid.Parse(planIDStr)
 	if err != nil {
-		return nil, errors.New("id do plano inválido")
+		return nil, fmt.Errorf("%w: id do plano inválido", errs.ErrInvalidInput)
 	}
 
 	plan, err := uc.repo.GetPlanByID(ctx, planID)
@@ -189,14 +235,24 @@ func (uc *GetPlanDetailsUseCase) Execute(ctx context.Context, planIDStr string, 
 		return nil, err
 	}
 	if plan == nil {
-		return nil, errors.New("plano não encontrado")
+		return nil, fmt.Errorf("%w: plano não encontrado", errs.ErrNotFound)
 	}
 
-	// RBAC
-	if role == "STUDENT" && plan.StudentID != tokenUserID {
-		return nil, errors.New("acesso negado")
-	} else if role == "TRAINER" && plan.TrainerID != tokenUserID {
-		return nil, errors.New("acesso negado")
+	switch role {
+	case domainU.RoleStudent:
+		stud, err := uc.studRepo.GetByUserID(ctx, tokenUserID)
+		if err != nil {
+			return nil, errors.New("falha ao verificar perfil do aluno")
+		}
+		if stud == nil || plan.StudentID != stud.ID {
+			return nil, fmt.Errorf("%w: acesso negado", errs.ErrForbidden)
+		}
+	case domainU.RoleTrainer:
+		if plan.TrainerID != tokenUserID {
+			return nil, fmt.Errorf("%w: acesso negado", errs.ErrForbidden)
+		}
+	default:
+		return nil, fmt.Errorf("%w: acesso negado", errs.ErrForbidden)
 	}
 
 	sessions, err := uc.repo.ListSessionsByPlan(ctx, plan.ID)
@@ -204,7 +260,7 @@ func (uc *GetPlanDetailsUseCase) Execute(ctx context.Context, planIDStr string, 
 		return nil, err
 	}
 
-	var sessionDetails []SessionDetailsOutput
+	sessionDetails := make([]SessionDetailsOutput, 0, len(sessions))
 	for _, s := range sessions {
 		exercises, err := uc.repo.ListExercisesBySession(ctx, s.ID)
 		if err != nil {

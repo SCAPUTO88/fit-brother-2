@@ -42,6 +42,8 @@ func (r *loginUserRepository) RevokeRefreshToken(context.Context, uuid.UUID) err
 
 func (r *loginUserRepository) RevokeTokenFamily(context.Context, uuid.UUID) error { return nil }
 
+func (r *loginUserRepository) RevokeAllByUserID(context.Context, uuid.UUID) error { return nil }
+
 func TestLoginUseCaseDoesNotLogPasswordHashOnInvalidPassword(t *testing.T) {
 	passwordService, err := crypto.NewPasswordService("test-pepper")
 	require.NoError(t, err)

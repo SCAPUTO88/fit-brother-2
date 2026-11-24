@@ -3,6 +3,8 @@ package student
 import (
 	"context"
 
+	"github.com/google/uuid"
+
 	domainS "github.com/SCAPUTO88/fit-brother/internal/domain/student"
 )
 
@@ -16,8 +18,6 @@ func NewListStudentsUseCase(sr domainS.Repository) *ListStudentsUseCase {
 	}
 }
 
-func (c *ListStudentsUseCase) Execute(ctx context.Context) ([]*domainS.StudentBaseInfo, error) {
-	// Futuramente podemos injetar o `TrainerID` aqui se quisermos que treinadores
-	// vejam apenas seus próprios alunos em um ambiente SaaS multi-tenant.
-	return c.studRepo.ListAll(ctx)
+func (c *ListStudentsUseCase) Execute(ctx context.Context, trainerID uuid.UUID) ([]*domainS.StudentBaseInfo, error) {
+	return c.studRepo.ListByTrainer(ctx, trainerID)
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/SCAPUTO88/fit-brother/internal/adapters/http/middleware"
 	appvideo "github.com/SCAPUTO88/fit-brother/internal/application/video"
+	"github.com/SCAPUTO88/fit-brother/internal/domain/user"
 )
 
 type VideoHandler struct {
@@ -30,7 +31,9 @@ func NewVideoHandler(
 
 func (h *VideoHandler) RegisterRoutes(router *gin.RouterGroup, auther gin.HandlerFunc) {
 	g := router.Group("/videos")
-	g.Use(auther)
+	if auther != nil {
+		g.Use(auther)
+	}
 
 	g.POST("/upload-url", h.RequestUploadURL)
 	g.POST("", h.ConfirmUpload)
@@ -43,20 +46,20 @@ func (h *VideoHandler) RequestUploadURL(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "acesso negado"})
 		return
 	}
-	if claims.Role != "TRAINER" {
+	if claims.Role != user.RoleTrainer {
 		c.JSON(http.StatusForbidden, gin.H{"error": "apenas treinadores podem fazer upload de vídeos"})
 		return
 	}
 
 	var input appvideo.RequestUploadURLInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "dados inválidos: " + err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "dados inválidos"})
 		return
 	}
 
 	out, err := h.requestUploadURL.Execute(c.Request.Context(), claims.UserID, input)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondDomainError(c, err, "falha ao gerar URL de upload")
 		return
 	}
 
@@ -69,20 +72,20 @@ func (h *VideoHandler) ConfirmUpload(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "acesso negado"})
 		return
 	}
-	if claims.Role != "TRAINER" {
+	if claims.Role != user.RoleTrainer {
 		c.JSON(http.StatusForbidden, gin.H{"error": "apenas treinadores podem confirmar uploads"})
 		return
 	}
 
 	var input appvideo.ConfirmUploadInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "dados inválidos: " + err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "dados inválidos"})
 		return
 	}
 
 	out, err := h.confirmUpload.Execute(c.Request.Context(), claims.UserID, input)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondDomainError(c, err, "falha ao confirmar upload")
 		return
 	}
 
@@ -90,22 +93,21 @@ func (h *VideoHandler) ConfirmUpload(c *gin.Context) {
 }
 
 func (h *VideoHandler) GetSignedURL(c *gin.Context) {
-	_, ok := middleware.GetClaims(c)
+	claims, ok := middleware.GetClaims(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "acesso negado"})
 		return
 	}
 
-	exerciseIDStr := c.Param("exercise_id")
-	exerciseID, err := uuid.Parse(exerciseIDStr)
+	exerciseID, err := uuid.Parse(c.Param("exercise_id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "exercise_id inválido"})
 		return
 	}
 
-	out, err := h.getSignedURL.Execute(c.Request.Context(), exerciseID)
+	out, err := h.getSignedURL.Execute(c.Request.Context(), exerciseID, claims.UserID, claims.Role)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		respondDomainError(c, err, "falha ao gerar URL do vídeo")
 		return
 	}
 

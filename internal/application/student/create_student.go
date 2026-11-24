@@ -3,11 +3,15 @@ package student
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/SCAPUTO88/fit-brother/internal/domain/errs"
 	domainS "github.com/SCAPUTO88/fit-brother/internal/domain/student"
+	"github.com/SCAPUTO88/fit-brother/internal/domain/tx"
 	domainU "github.com/SCAPUTO88/fit-brother/internal/domain/user"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/crypto"
 )
@@ -15,6 +19,7 @@ import (
 type CreateStudentUseCase struct {
 	userRepo  domainU.Repository
 	studRepo  domainS.Repository
+	txManager tx.Manager
 	passSvc   *crypto.PasswordService
 	encryptor *crypto.AESEncryptor
 	hashGen   *crypto.Hash
@@ -23,6 +28,7 @@ type CreateStudentUseCase struct {
 func NewCreateStudentUseCase(
 	ur domainU.Repository,
 	sr domainS.Repository,
+	txManager tx.Manager,
 	ps *crypto.PasswordService,
 	enc *crypto.AESEncryptor,
 	hg *crypto.Hash,
@@ -30,6 +36,7 @@ func NewCreateStudentUseCase(
 	return &CreateStudentUseCase{
 		userRepo:  ur,
 		studRepo:  sr,
+		txManager: txManager,
 		passSvc:   ps,
 		encryptor: enc,
 		hashGen:   hg,
@@ -37,55 +44,84 @@ func NewCreateStudentUseCase(
 }
 
 func (c *CreateStudentUseCase) Execute(ctx context.Context, input CreateStudentInput) (*StudentOutput, error) {
-	existingUsr, _ := c.userRepo.GetByEmail(ctx, input.Email)
-	if existingUsr != nil {
-		return nil, errors.New("email ou CPF já cadastrados")
+	if input.TrainerID == uuid.Nil {
+		return nil, fmt.Errorf("%w: treinador responsável obrigatório", errs.ErrForbidden)
 	}
 
+	email := strings.TrimSpace(input.Email)
 	newUserID := uuid.New()
 
-	studentDomain, err := domainS.NewStudent(newUserID, input.CPF)
+	studentDomain, err := domainS.NewStudent(newUserID, input.TrainerID, input.CPF)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", errs.ErrInvalidInput, err)
 	}
 
 	cpfHash := c.hashGen.Generate(studentDomain.GetCleanCPF())
-	existingStud, _ := c.studRepo.GetByCPFHash(ctx, cpfHash)
-	if existingStud != nil {
-		return nil, errors.New("email ou CPF já cadastrados")
-	}
 
 	hashedPass, err := c.passSvc.Hash(input.Password)
 	if err != nil {
+		studentDomain.ClearSensitiveData()
 		return nil, errors.New("falha interna ao processar senha")
 	}
 
 	userDomain := &domainU.User{
 		ID:           newUserID,
-		Email:        input.Email,
-		FullName:     input.FullName,
+		Email:        email,
+		FullName:     strings.TrimSpace(input.FullName),
 		PasswordHash: hashedPass,
 		Role:         domainU.RoleStudent,
 		IsActive:     true,
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}
+	if err := userDomain.Validate(); err != nil {
+		studentDomain.ClearSensitiveData()
+		return nil, fmt.Errorf("%w: %v", errs.ErrInvalidInput, err)
+	}
 
 	encryptedCpf, err := c.encryptor.Encrypt(studentDomain.GetCleanCPF(), []byte(studentDomain.ID.String()))
+	studentDomain.ClearSensitiveData()
 	if err != nil {
 		return nil, errors.New("falha interna encriptando CPF")
 	}
 
 	studentDomain.CPFEncrypted = encryptedCpf
 	studentDomain.CPFHash = cpfHash
-	studentDomain.ClearSensitiveData()
 
-	if err := c.userRepo.Create(ctx, userDomain); err != nil {
-		return nil, errors.New("falha ao criar credenciais base")
+	run := func(execCtx context.Context) error {
+		existingUsr, err := c.userRepo.GetByEmail(execCtx, email)
+		if err != nil {
+			return errors.New("falha ao verificar email cadastrado")
+		}
+		if existingUsr != nil {
+			return fmt.Errorf("%w: email ou CPF já cadastrados", errs.ErrConflict)
+		}
+
+		existingStud, err := c.studRepo.GetByCPFHash(execCtx, cpfHash)
+		if err != nil {
+			return errors.New("falha ao verificar CPF cadastrado")
+		}
+		if existingStud != nil {
+			return fmt.Errorf("%w: email ou CPF já cadastrados", errs.ErrConflict)
+		}
+
+		if err := c.userRepo.Create(execCtx, userDomain); err != nil {
+			return errors.New("falha ao criar credenciais base")
+		}
+
+		if err := c.studRepo.Create(execCtx, studentDomain); err != nil {
+			return errors.New("falha persistindo aluno")
+		}
+
+		return nil
 	}
 
-	if err := c.studRepo.Create(ctx, studentDomain); err != nil {
-		return nil, errors.New("falha persistindo aluno")
+	if c.txManager != nil {
+		if err := c.txManager.RunInTx(ctx, run); err != nil {
+			return nil, err
+		}
+	} else if err := run(ctx); err != nil {
+		return nil, err
 	}
 
 	return &StudentOutput{

@@ -24,6 +24,10 @@ class StudentSummary {
 // ---------- Provider ----------
 
 final studentsProvider = FutureProvider<List<StudentSummary>>((ref) async {
+  final isLoggedIn = ref.watch(authProvider.select((s) => s.isLoggedIn));
+  if (!isLoggedIn) {
+    return const [];
+  }
   final dioClient = ref.watch(dioClientProvider);
   final response = await dioClient.dio.get('/students');
   final List data = response.data as List;

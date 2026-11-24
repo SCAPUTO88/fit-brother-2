@@ -15,7 +15,7 @@ type RequestUploadURLOutput struct {
 type ConfirmUploadInput struct {
 	ExerciseID string `json:"exercise_id" binding:"required,uuid"`
 	R2Key      string `json:"r2_key" binding:"required"`
-	Filename   string `json:"filename" binding:"required"`
+	Filename   string `json:"filename"`
 	SizeBytes  int64  `json:"size_bytes"`
 	MimeType   string `json:"mime_type"`
 }
