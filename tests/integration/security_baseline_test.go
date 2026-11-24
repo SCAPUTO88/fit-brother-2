@@ -172,9 +172,14 @@ func TestSecurityBaselinePostgresIntegration(t *testing.T) {
 	db, err := sqlx.Open("pgx", dbURL)
 	require.NoError(t, err)
 	defer db.Close()
-	require.NoError(t, db.Ping())
+
+	pingCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	require.NoError(t, db.PingContext(pingCtx))
+	t.Log("Postgres conectado; aplicando migrations")
 
 	applyMigrations(t, db)
+	t.Log("Migrations aplicadas com sucesso")
 
 	privPEM, pubPEM := generateTestRSAKeys(t)
 	pepper := "integration-test-pepper-32-chars!!"

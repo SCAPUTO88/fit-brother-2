@@ -105,52 +105,85 @@ type fakeWorkoutRepo struct {
 	exercise *domainW.Exercise
 }
 
-func (r *fakeWorkoutRepo) CreatePlan(context.Context, *domainW.WorkoutPlan) error { return nil }
+func (r *fakeWorkoutRepo) CreatePlan(context.Context, *domainW.WorkoutPlan) error {
+	return nil
+}
+
 func (r *fakeWorkoutRepo) GetPlanByID(context.Context, uuid.UUID) (*domainW.WorkoutPlan, error) {
 	return r.plan, nil
 }
+
 func (r *fakeWorkoutRepo) ListPlansByStudent(context.Context, uuid.UUID) ([]*domainW.WorkoutPlan, error) {
 	return nil, nil
 }
+
 func (r *fakeWorkoutRepo) ListPlansByTrainer(context.Context, uuid.UUID) ([]*domainW.WorkoutPlan, error) {
 	return nil, nil
 }
-func (r *fakeWorkoutRepo) UpdatePlan(context.Context, *domainW.WorkoutPlan) error      { return nil }
-func (r *fakeWorkoutRepo) CreateSession(context.Context, *domainW.WorkoutSession) error { return nil }
+
+func (r *fakeWorkoutRepo) UpdatePlan(context.Context, *domainW.WorkoutPlan) error {
+	return nil
+}
+
+func (r *fakeWorkoutRepo) CreateSession(context.Context, *domainW.WorkoutSession) error {
+	return nil
+}
+
 func (r *fakeWorkoutRepo) GetSessionByID(context.Context, uuid.UUID) (*domainW.WorkoutSession, error) {
 	return r.session, nil
 }
+
 func (r *fakeWorkoutRepo) ListSessionsByPlan(context.Context, uuid.UUID) ([]*domainW.WorkoutSession, error) {
 	return nil, nil
 }
-func (r *fakeWorkoutRepo) CreateExercise(context.Context, *domainW.Exercise) error { return nil }
+
+func (r *fakeWorkoutRepo) CreateExercise(context.Context, *domainW.Exercise) error {
+	return nil
+}
+
 func (r *fakeWorkoutRepo) GetExerciseByID(context.Context, uuid.UUID) (*domainW.Exercise, error) {
 	return r.exercise, nil
 }
+
 func (r *fakeWorkoutRepo) ListExercisesBySession(context.Context, uuid.UUID) ([]*domainW.Exercise, error) {
 	return nil, nil
 }
-func (r *fakeWorkoutRepo) DeleteExercise(context.Context, uuid.UUID) error { return nil }
+
+func (r *fakeWorkoutRepo) DeleteExercise(context.Context, uuid.UUID) error {
+	return nil
+}
 
 type fakeStudentRepo struct {
 	byUser map[uuid.UUID]*domainS.Student
 }
 
-func (r *fakeStudentRepo) Create(context.Context, *domainS.Student) error { return nil }
+func (r *fakeStudentRepo) Create(context.Context, *domainS.Student) error {
+	return nil
+}
+
 func (r *fakeStudentRepo) GetByID(context.Context, uuid.UUID) (*domainS.Student, error) {
 	return nil, nil
 }
+
 func (r *fakeStudentRepo) GetByUserID(_ context.Context, userID uuid.UUID) (*domainS.Student, error) {
 	return r.byUser[userID], nil
 }
+
 func (r *fakeStudentRepo) GetByCPFHash(context.Context, string) (*domainS.Student, error) {
 	return nil, nil
 }
+
 func (r *fakeStudentRepo) ListByTrainer(context.Context, uuid.UUID) ([]*domainS.StudentBaseInfo, error) {
 	return nil, nil
 }
-func (r *fakeStudentRepo) Delete(context.Context, uuid.UUID) error                  { return nil }
-func (r *fakeStudentRepo) SaveBiometric(context.Context, *domainS.BiometricData) error { return nil }
+
+func (r *fakeStudentRepo) Delete(context.Context, uuid.UUID) error {
+	return nil
+}
+
+func (r *fakeStudentRepo) SaveBiometric(context.Context, *domainS.BiometricData) error {
+	return nil
+}
 
 func TestVideoHardeningUseCases(t *testing.T) {
 	ctx := context.Background()

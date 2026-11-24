@@ -26,26 +26,44 @@ type mockRefreshRepo struct {
 	createdNewTokens int
 }
 
-func (m *mockRefreshRepo) Create(context.Context, *user.User) error          { return nil }
-func (m *mockRefreshRepo) GetByID(context.Context, uuid.UUID) (*user.User, error) { return m.usr, nil }
-func (m *mockRefreshRepo) GetByEmail(context.Context, string) (*user.User, error) { return nil, nil }
-func (m *mockRefreshRepo) Update(context.Context, *user.User) error          { return nil }
+func (m *mockRefreshRepo) Create(context.Context, *user.User) error {
+	return nil
+}
+
+func (m *mockRefreshRepo) GetByID(context.Context, uuid.UUID) (*user.User, error) {
+	return m.usr, nil
+}
+
+func (m *mockRefreshRepo) GetByEmail(context.Context, string) (*user.User, error) {
+	return nil, nil
+}
+
+func (m *mockRefreshRepo) Update(context.Context, *user.User) error {
+	return nil
+}
+
 func (m *mockRefreshRepo) CreateRefreshToken(_ context.Context, _ *user.RefreshToken) error {
 	m.createdNewTokens++
 	return nil
 }
+
 func (m *mockRefreshRepo) GetRefreshTokenByHash(context.Context, string) (*user.RefreshToken, error) {
 	return m.rtByHash, nil
 }
+
 func (m *mockRefreshRepo) RevokeRefreshToken(_ context.Context, id uuid.UUID) error {
 	m.revokedTokenID = id
 	return nil
 }
+
 func (m *mockRefreshRepo) RevokeTokenFamily(_ context.Context, familyID uuid.UUID) error {
 	m.revokedFamilyID = familyID
 	return nil
 }
-func (m *mockRefreshRepo) RevokeAllByUserID(context.Context, uuid.UUID) error { return nil }
+
+func (m *mockRefreshRepo) RevokeAllByUserID(context.Context, uuid.UUID) error {
+	return nil
+}
 
 type inlineTxManager struct {
 	calls int

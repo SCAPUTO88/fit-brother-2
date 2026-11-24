@@ -110,8 +110,13 @@ func (m *MockWorkoutStudentRepo) GetByCPFHash(context.Context, string) (*domainS
 func (m *MockWorkoutStudentRepo) ListByTrainer(context.Context, uuid.UUID) ([]*domainS.StudentBaseInfo, error) {
 	return nil, nil
 }
-func (m *MockWorkoutStudentRepo) Delete(context.Context, uuid.UUID) error                  { return nil }
-func (m *MockWorkoutStudentRepo) SaveBiometric(context.Context, *domainS.BiometricData) error { return nil }
+func (m *MockWorkoutStudentRepo) Delete(context.Context, uuid.UUID) error {
+	return nil
+}
+
+func (m *MockWorkoutStudentRepo) SaveBiometric(context.Context, *domainS.BiometricData) error {
+	return nil
+}
 
 func TestCreateWorkoutPlanUseCase(t *testing.T) {
 	ctx := context.Background()
