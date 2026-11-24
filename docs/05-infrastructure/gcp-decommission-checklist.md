@@ -6,11 +6,11 @@
 
 ## 1. Ações Técnicas no Repositório (Fase 2)
 
-- [ ] Atualizar `README.md` removendo menções a Google Cloud Run e ajustando para a stack alvo fora do GCP.
-- [ ] Atualizar/arquivar `docs/architecture/SAD.md` referenciando `docs/02-architecture/target-architecture.md` (sem Cloud Run / Upstash obrigatório).
-- [ ] Renomear teste `TestResolveAppPortUsesRailwayPortWhenAppPortIsUnset` (`config_test.go`) para nome agnóstico de plataforma (`TestResolveAppPortFallsBackToPortEnvVar`).
-- [ ] Garantir que `docker/Dockerfile` continua agnóstico de nuvem (OCI container padrão rodando `PORT` ou `APP_PORT`).
-- [ ] Garantir que `.github/workflows/ci.yml` e futuros workflows de deploy não possuam steps de `google-github-actions/*` ou `gcloud`.
+- [x] Atualizar `README.md` removendo menções a Google Cloud Run e ajustando para a stack alvo fora do GCP.
+- [x] Atualizar/arquivar `docs/architecture/SAD.md` referenciando `docs/02-architecture/target-architecture.md` (sem Cloud Run / Upstash obrigatório).
+- [x] Renomear teste `TestResolveAppPortUsesRailwayPortWhenAppPortIsUnset` (`config_test.go`) para nome agnóstico de plataforma (`TestResolveAppPortFallsBackToPortEnvVar`).
+- [x] Garantir que `docker/Dockerfile` continua agnóstico de nuvem (OCI container padrão rodando `PORT` ou `APP_PORT`).
+- [x] Garantir que `.github/workflows/ci.yml` e futuros workflows de deploy não possuam steps de `google-github-actions/*` ou `gcloud`.
 
 ---
 

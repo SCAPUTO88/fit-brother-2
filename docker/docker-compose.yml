@@ -1,7 +1,7 @@
 # ==============================================================================
 # docker-compose.yml — Ambiente de Desenvolvimento Local
 # Este arquivo NÃO é usado em produção.
-# Em produção: Railway (backend) + Supabase (DB) + Upstash (Redis) + R2 (storage)
+# Stack alvo fora do GCP (ADR-007): PaaS Container + Supabase Postgres + R2
 # ==============================================================================
 services:
   # ----------------------------------------------------------------------------
@@ -22,8 +22,9 @@ services:
       APP_BASE_URL: http://localhost:8080
       # Banco local (docker)
       DATABASE_URL: postgres://fitbrother:secret@postgres:5432/fitbrother_db?sslmode=disable
-      # Redis local (docker)
-      REDIS_URL: redis://redis:6379
+      # Storage local de mídia em desenvolvimento (ADR-005)
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_DIR: /tmp/fitbrother-storage
       # Segredos — definidos no .env local
       JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private_key
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public_key
@@ -36,8 +37,6 @@ services:
       - jwt_public_key
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     volumes:
       # Hot-reload em desenvolvimento (com air)
@@ -66,29 +65,11 @@ services:
     restart: unless-stopped
 
   # ----------------------------------------------------------------------------
-  # Redis — réplica local do Upstash para desenvolvimento offline
-  # ----------------------------------------------------------------------------
-  redis:
-    image: redis:7-alpine
-    container_name: fitbrother_redis
-    command: redis-server --requirepass devpassword --appendonly yes
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "devpassword", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  # ----------------------------------------------------------------------------
   # Adminer — UI para inspecionar o banco em desenvolvimento
   # Acesse: http://localhost:8081
   # ----------------------------------------------------------------------------
   adminer:
-    image: adminer:latest
+    image: adminer:4.8.1
     container_name: fitbrother_adminer
     ports:
       - "8081:8080"
@@ -98,7 +79,6 @@ services:
 
 volumes:
   postgres_data:
-  redis_data:
 
 secrets:
   jwt_private_key:
