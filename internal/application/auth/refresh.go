@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/SCAPUTO88/fit-brother/internal/adapters/repository/postgres"
 	"github.com/SCAPUTO88/fit-brother/internal/domain/tx"
 	"github.com/SCAPUTO88/fit-brother/internal/domain/user"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/crypto"
@@ -39,6 +38,7 @@ func NewRefreshUseCase(
 
 func (u *RefreshUseCase) Execute(ctx context.Context, input RefreshInput) (*TokenOutput, error) {
 	var out *TokenOutput
+	var compromisedFamilyID uuid.UUID
 
 	run := func(execCtx context.Context) error {
 		hashedRT := crypto.SHA256Raw(input.RefreshToken)
@@ -49,7 +49,7 @@ func (u *RefreshUseCase) Execute(ctx context.Context, input RefreshInput) (*Toke
 		}
 
 		if rtRecord.IsRevoked {
-			_ = u.userRepo.RevokeTokenFamily(postgres.WithoutTx(execCtx), rtRecord.FamilyID)
+			compromisedFamilyID = rtRecord.FamilyID
 			return errors.New("token comprometido, sessão encerrada por segurança")
 		}
 
@@ -102,12 +102,18 @@ func (u *RefreshUseCase) Execute(ctx context.Context, input RefreshInput) (*Toke
 
 	if u.txManager != nil {
 		if err := u.txManager.RunInTx(ctx, run); err != nil {
+			if compromisedFamilyID != uuid.Nil {
+				_ = u.userRepo.RevokeTokenFamily(ctx, compromisedFamilyID)
+			}
 			return nil, err
 		}
 		return out, nil
 	}
 
 	if err := run(ctx); err != nil {
+		if compromisedFamilyID != uuid.Nil {
+			_ = u.userRepo.RevokeTokenFamily(ctx, compromisedFamilyID)
+		}
 		return nil, err
 	}
 	return out, nil
