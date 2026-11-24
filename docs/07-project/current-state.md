@@ -1,9 +1,10 @@
 # Estado Atual do Projeto (Checkpoint de Handoff)
 
 **Última atualização:** 2026-11-24  
-**Fase atual:** **Fase 1 — Security Baseline (Implementação concluída em `fix/fase-1-security-baseline`, aguardando validação em ambiente com Go/Flutter/Postgres e revisão do usuário)**  
-**Branch ativa:** `fix/fase-1-security-baseline` (baseada em `develop` `16a8e6934475b3bf1491603926c8a3955b87043a`)  
-**Branch `origin/main`:** `565e121` (desatualizada — Sprint 2)
+**Fase atual:** **Fase 1 — Security Baseline (Implementada, validada com 5/5 jobs verdes no GitHub Actions e aberta em PR `#1` para `develop`)**  
+**Repositório conectado:** `https://github.com/SCAPUTO88/fit-brother-2`  
+**Branch ativa:** `fix/fase-1-security-baseline` → **PR `#1`** (`https://github.com/SCAPUTO88/fit-brother-2/pull/1`) para `develop`  
+**Branch `origin/main`:** `565e121` (Sprint 2 — aguardando promoção controlada após validação em `develop`)
 
 ---
 
@@ -32,12 +33,10 @@
 
 ---
 
-## 2. Pendências para Verificação antes da Fase 2
+## 2. Estado do Pipeline e Próximos Passos
 
-1. **Executar suítes reais em ambiente com Go 1.26, Flutter 3.41 e Docker/PostgreSQL** (ausentes neste contêiner):
-   - `gofmt -l .`
-   - `go test -v -race -count=1 ./internal/...`
-   - `go test -v -race -count=1 -tags integration ./tests/integration/...`
-   - `cd fit_brother_app && flutter analyze && flutter test`
-2. **Revisão e aprovação do usuário** antes de commitar, abrir PR ou avançar para a **Fase 2 — Workout & Video Core**.
-3. **Nenhum push, merge, deploy ou alteração em serviços externos foi executado.**
+1. **Esteira CI (`.github/workflows/ci.yml`):**
+   - Pipeline ampliado para cobrir `Lint (Go)`, `Security Scan (Go)` (`govulncheck`), `Test (Go + Postgres)` (unitários `-race`, integração PostgreSQL `001`–`006` e cobertura), `Flutter (Analyze, Test & Web Build)` e `Build (Go & Docker)`.
+   - Todos os 5 jobs validados com sucesso na run [`45461877292`](https://github.com/SCAPUTO88/fit-brother-2/actions/runs/45461877292) (detalhes em [`../06-quality/test-results.md`](../06-quality/test-results.md)).
+2. **Revisão e merge:**
+   - PR [`#1`](https://github.com/SCAPUTO88/fit-brother-2/pull/1) (`fix/fase-1-security-baseline` → `develop`) pronto para aprovação e merge pelo usuário antes de avançar para a **Fase 2 — Workout & Video Core**.
