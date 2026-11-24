@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, "fix/**", "feat/**"]
   pull_request:
     branches: [main, develop]
 
@@ -11,10 +11,10 @@ env:
 
 jobs:
   # ----------------------------------------------------------------------------
-  # Lint — verifica formatação e qualidade do código
+  # Lint — verifica formatação e qualidade do código Go
   # ----------------------------------------------------------------------------
   lint:
-    name: Lint
+    name: Lint (Go)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,10 +41,10 @@ jobs:
           fi
 
   # ----------------------------------------------------------------------------
-  # Security — vulnerabilidades em dependências
+  # Security — vulnerabilidades em dependências Go
   # ----------------------------------------------------------------------------
   security:
-    name: Security Scan
+    name: Security Scan (Go)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,10 +62,10 @@ jobs:
         run: govulncheck ./...
 
   # ----------------------------------------------------------------------------
-  # Test — testes unitários e de integração
+  # Test — testes unitários e de integração Go + PostgreSQL + Redis
   # ----------------------------------------------------------------------------
   test:
-    name: Test
+    name: Test (Go + Postgres)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -109,12 +109,9 @@ jobs:
           DATABASE_URL: postgres://fitbrother:secret@localhost:5432/fitbrother_test?sslmode=disable
           REDIS_URL: redis://localhost:6379
           APP_ENV: test
-          # Secrets de teste (valores falsos apenas para CI)
           AES_KEY: dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleTA=
           CPF_HMAC_SECRET: test-hmac-secret-for-ci-only-32chars!
           PASSWORD_PEPPER: test-pepper-for-ci-only-32chars!!
-          JWT_PRIVATE_KEY_PATH: ./secrets/jwt_rsa_test.pem
-          JWT_PUBLIC_KEY_PATH: ./secrets/jwt_rsa_test.pub.pem
           R2_ACCOUNT_ID: test
           R2_ACCESS_KEY_ID: test
           R2_SECRET_ACCESS_KEY: test
@@ -128,12 +125,42 @@ jobs:
           go tool cover -func=coverage.out
 
   # ----------------------------------------------------------------------------
-  # Build — valida que o binário compila corretamente
+  # Flutter — análise estática, testes e build web
+  # ----------------------------------------------------------------------------
+  flutter:
+    name: Flutter (Analyze, Test & Web Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fit_brother_app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Run Flutter tests
+        run: flutter test
+
+      - name: Build Web
+        run: flutter build web --release
+
+  # ----------------------------------------------------------------------------
+  # Build — valida que o binário Go e a imagem Docker compilam corretamente
   # ----------------------------------------------------------------------------
   build:
-    name: Build
+    name: Build (Go & Docker)
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [lint, test, flutter]
     steps:
       - uses: actions/checkout@v4
 
