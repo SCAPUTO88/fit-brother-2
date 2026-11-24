@@ -28,19 +28,20 @@ import (
 	"github.com/stretchr/testify/require"
 
 	apphttp "github.com/SCAPUTO88/fit-brother/internal/adapters/http"
-	"github.com/SCAPUTO88/fit-brother/internal/adapters/storage"
+	"github.com/SCAPUTO88/fit-brother/internal/adapters/http/middleware"
+	domainStorage "github.com/SCAPUTO88/fit-brother/internal/domain/storage"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/config"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/crypto"
 )
 
 type integrationVideoStorage struct {
 	mu      sync.Mutex
-	objects map[string]storage.ObjectMetadata
+	objects map[string]domainStorage.ObjectMetadata
 }
 
 func newIntegrationVideoStorage() *integrationVideoStorage {
 	return &integrationVideoStorage{
-		objects: make(map[string]storage.ObjectMetadata),
+		objects: make(map[string]domainStorage.ObjectMetadata),
 	}
 }
 
@@ -48,12 +49,12 @@ func (s *integrationVideoStorage) GeneratePresignedUploadURL(_ context.Context, 
 	return "https://r2.test.local/upload/" + key, nil
 }
 
-func (s *integrationVideoStorage) HeadObject(_ context.Context, key string) (*storage.ObjectMetadata, error) {
+func (s *integrationVideoStorage) HeadObject(_ context.Context, key string) (*domainStorage.ObjectMetadata, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	meta, ok := s.objects[key]
 	if !ok {
-		return nil, storage.ErrObjectNotFound
+		return nil, domainStorage.ErrObjectNotFound
 	}
 	return &meta, nil
 }
@@ -72,7 +73,7 @@ func (s *integrationVideoStorage) DeleteObject(_ context.Context, key string) er
 func (s *integrationVideoStorage) putFakeObject(key string, size int64, mimeType string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.objects[key] = storage.ObjectMetadata{
+	s.objects[key] = domainStorage.ObjectMetadata{
 		SizeBytes: size,
 		MimeType:  mimeType,
 	}
@@ -160,6 +161,15 @@ func loginAndGetTokens(t *testing.T, router http.Handler, email, password string
 	return out.AccessToken, out.RefreshToken
 }
 
+func findCookie(cookies []*http.Cookie, name string) *http.Cookie {
+	for _, c := range cookies {
+		if c.Name == name {
+			return c
+		}
+	}
+	return nil
+}
+
 func TestSecurityBaselinePostgresIntegration(t *testing.T) {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
@@ -187,7 +197,7 @@ func TestSecurityBaselinePostgresIntegration(t *testing.T) {
 	hmacSecret := base64.StdEncoding.EncodeToString([]byte("integration-hmac-secret-32-bytes"))
 
 	cfg := &config.Config{
-		App: config.AppConfig{Env: "test", Port: "8080"},
+		App: config.AppConfig{Env: "test", Port: "8080", BaseURL: "http://localhost:8080"},
 		Crypto: config.CryptoConfig{
 			AESKey:         aesKey,
 			CPFHMACSecret:  hmacSecret,
@@ -199,7 +209,9 @@ func TestSecurityBaselinePostgresIntegration(t *testing.T) {
 			AccessTokenTTL:  15 * time.Minute,
 			RefreshTokenTTL: 24 * time.Hour,
 		},
-		R2: config.R2Config{
+		Storage: config.StorageConfig{
+			Driver:       config.StorageDriverLocal,
+			LocalDir:     t.TempDir(),
 			SignedURLTTL: 5 * time.Minute,
 		},
 		CORS: config.CORSConfig{AllowedOrigins: "http://localhost:3000"},
@@ -337,7 +349,7 @@ func TestSecurityBaselinePostgresIntegration(t *testing.T) {
 	})
 	assert.Equal(t, http.StatusBadRequest, wConfirmBeforePut.Code)
 
-	// Simula PUT concluido no R2 e confirma
+	// Simula PUT concluido e confirma
 	fakeStorage.putFakeObject(uploadOut.R2Key, 1024*512, "video/mp4")
 	wConfirmAfterPut := doJSONRequest(t, router, http.MethodPost, "/v1/videos", trainerAToken, map[string]string{
 		"exercise_id": exOut.ID,
@@ -352,7 +364,106 @@ func TestSecurityBaselinePostgresIntegration(t *testing.T) {
 	wSignedB := doJSONRequest(t, router, http.MethodGet, "/v1/videos/exercises/"+exOut.ID+"/signed-url", trainerBToken, nil)
 	assert.Equal(t, http.StatusForbidden, wSignedB.Code)
 
-	// 8. LGPD Anonymize remove PII, revoga tokens e invalida JWT ativo em tempo real
+	// 8. Sessao Web com cookies HttpOnly + protecao CSRF (ADR-008) e LocalStorageAdapter ponta-a-ponta (ADR-005)
+	t.Run("Fluxo Web Cookie + CSRF e LocalStorage sem Redis/R2", func(t *testing.T) {
+		localRouter, err := apphttp.SetupRouter(cfg, db)
+		require.NoError(t, err)
+
+		var loginBody bytes.Buffer
+		require.NoError(t, json.NewEncoder(&loginBody).Encode(map[string]string{
+			"email":    trainerAEmail,
+			"password": trainerAPass,
+		}))
+		reqCookieLogin := httptest.NewRequest(http.MethodPost, "/v1/auth/login", &loginBody)
+		reqCookieLogin.Header.Set("Content-Type", "application/json")
+		reqCookieLogin.Header.Set(middleware.SessionModeHeaderName, "cookie")
+		wCookieLogin := httptest.NewRecorder()
+		localRouter.ServeHTTP(wCookieLogin, reqCookieLogin)
+		require.Equal(t, http.StatusOK, wCookieLogin.Code, wCookieLogin.Body.String())
+
+		// Nao vaza raw access_token/refresh_token no corpo JSON
+		assert.NotContains(t, wCookieLogin.Body.String(), "access_token")
+		assert.NotContains(t, wCookieLogin.Body.String(), "refresh_token")
+
+		cookies := wCookieLogin.Result().Cookies()
+		accessCookie := findCookie(cookies, middleware.AccessCookieName)
+		refreshCookie := findCookie(cookies, middleware.RefreshCookieName)
+		csrfCookie := findCookie(cookies, middleware.CSRFCookieName)
+		require.NotNil(t, accessCookie)
+		require.NotNil(t, refreshCookie)
+		require.NotNil(t, csrfCookie)
+		assert.True(t, accessCookie.HttpOnly)
+		assert.True(t, refreshCookie.HttpOnly)
+		assert.False(t, csrfCookie.HttpOnly)
+
+		// GET autenticado via cookie
+		reqStudents := httptest.NewRequest(http.MethodGet, "/v1/students", nil)
+		reqStudents.AddCookie(accessCookie)
+		wStudents := httptest.NewRecorder()
+		localRouter.ServeHTTP(wStudents, reqStudents)
+		require.Equal(t, http.StatusOK, wStudents.Code)
+
+		// POST via cookie sem X-CSRF-Token deve falhar com 403
+		reqNoCSRF := httptest.NewRequest(http.MethodPost, "/v1/videos/upload-url", strings.NewReader(`{"exercise_id":"`+exOut.ID+`","filename":"local.mp4","mime_type":"video/mp4"}`))
+		reqNoCSRF.Header.Set("Content-Type", "application/json")
+		reqNoCSRF.Header.Set("Origin", "http://localhost:3000")
+		reqNoCSRF.AddCookie(accessCookie)
+		reqNoCSRF.AddCookie(csrfCookie)
+		wNoCSRF := httptest.NewRecorder()
+		localRouter.ServeHTTP(wNoCSRF, reqNoCSRF)
+		assert.Equal(t, http.StatusForbidden, wNoCSRF.Code)
+
+		// POST via cookie com X-CSRF-Token -> gera URL local assinada -> PUT local -> Confirm -> GET playback
+		reqWithCSRF := httptest.NewRequest(http.MethodPost, "/v1/videos/upload-url", strings.NewReader(`{"exercise_id":"`+exOut.ID+`","filename":"local.mp4","mime_type":"video/mp4"}`))
+		reqWithCSRF.Header.Set("Content-Type", "application/json")
+		reqWithCSRF.Header.Set("Origin", "http://localhost:3000")
+		reqWithCSRF.Header.Set(middleware.CSRFHeaderName, csrfCookie.Value)
+		reqWithCSRF.AddCookie(accessCookie)
+		reqWithCSRF.AddCookie(csrfCookie)
+		wWithCSRF := httptest.NewRecorder()
+		localRouter.ServeHTTP(wWithCSRF, reqWithCSRF)
+		require.Equal(t, http.StatusOK, wWithCSRF.Code, wWithCSRF.Body.String())
+
+		var localUpload struct {
+			PresignedURL string `json:"presigned_url"`
+			R2Key        string `json:"r2_key"`
+		}
+		require.NoError(t, json.Unmarshal(wWithCSRF.Body.Bytes(), &localUpload))
+		assert.Contains(t, localUpload.PresignedURL, "/v1/storage/local")
+
+		// PUT binario direto para URL local assinada
+		reqPut := httptest.NewRequest(http.MethodPut, localUpload.PresignedURL, strings.NewReader("video-bytes-payload"))
+		reqPut.Header.Set("Content-Type", "video/mp4")
+		wPut := httptest.NewRecorder()
+		localRouter.ServeHTTP(wPut, reqPut)
+		require.Equal(t, http.StatusOK, wPut.Code, wPut.Body.String())
+
+		// Refresh via cookie rotaciona cookies sem enviar body JSON
+		reqCookieRefresh := httptest.NewRequest(http.MethodPost, "/v1/auth/refresh", nil)
+		reqCookieRefresh.Header.Set("Origin", "http://localhost:3000")
+		reqCookieRefresh.Header.Set(middleware.CSRFHeaderName, csrfCookie.Value)
+		reqCookieRefresh.AddCookie(refreshCookie)
+		reqCookieRefresh.AddCookie(csrfCookie)
+		wCookieRefresh := httptest.NewRecorder()
+		localRouter.ServeHTTP(wCookieRefresh, reqCookieRefresh)
+		require.Equal(t, http.StatusOK, wCookieRefresh.Code, wCookieRefresh.Body.String())
+		rotatedCookies := wCookieRefresh.Result().Cookies()
+		require.NotNil(t, findCookie(rotatedCookies, middleware.AccessCookieName))
+		rotatedCSRF := findCookie(rotatedCookies, middleware.CSRFCookieName)
+		require.NotNil(t, rotatedCSRF)
+
+		// Logout via cookie expira cookies e retorna 204
+		reqCookieLogout := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
+		reqCookieLogout.Header.Set("Origin", "http://localhost:3000")
+		reqCookieLogout.Header.Set(middleware.CSRFHeaderName, rotatedCSRF.Value)
+		reqCookieLogout.AddCookie(findCookie(rotatedCookies, middleware.RefreshCookieName))
+		reqCookieLogout.AddCookie(rotatedCSRF)
+		wCookieLogout := httptest.NewRecorder()
+		localRouter.ServeHTTP(wCookieLogout, reqCookieLogout)
+		require.Equal(t, http.StatusNoContent, wCookieLogout.Code)
+	})
+
+	// 9. LGPD Anonymize remove PII, revoga tokens e invalida JWT ativo em tempo real
 	wDel := doJSONRequest(t, router, http.MethodDelete, "/v1/students/"+createdStud.ID, trainerAToken, nil)
 	require.Equal(t, http.StatusOK, wDel.Code, wDel.Body.String())
 

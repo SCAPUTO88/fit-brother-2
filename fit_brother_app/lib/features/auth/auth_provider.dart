@@ -1,15 +1,31 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 import '../../core/api/dio_client.dart';
+import '../../core/api/token_storage.dart';
 
 final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
   return const FlutterSecureStorage();
 });
 
+final tokenStorageProvider = Provider<TokenStorage>((ref) {
+  if (kIsWeb) {
+    return const NoOpTokenStorage();
+  }
+  return SecureTokenStorage(ref.watch(secureStorageProvider));
+});
+
 final dioClientProvider = Provider<DioClient>((ref) {
-  final storage = ref.watch(secureStorageProvider);
-  return DioClient(secureStorage: storage);
+  final storage = ref.watch(tokenStorageProvider);
+  return DioClient(
+    tokenStorage: storage,
+    useCookieSession: kIsWeb,
+    onSessionExpired: () {
+      ref.read(authProvider.notifier).expireSession();
+    },
+  );
 });
 
 class AuthState {
@@ -44,23 +60,49 @@ class AuthNotifier extends Notifier<AuthState> {
   @override
   AuthState build() => const AuthState();
 
-  Dio get _dio => ref.read(dioClientProvider).dio;
-  FlutterSecureStorage get _storage => ref.read(secureStorageProvider);
+  DioClient get _client => ref.read(dioClientProvider);
+  Dio get _dio => _client.dio;
+  TokenStorage get _storage => ref.read(tokenStorageProvider);
 
   Future<void> login(String email, String password) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final response = await _dio.post(
+      final useCookie = _client.useCookieSession;
+      final response = await _dio.post<dynamic>(
         '/auth/login',
         data: {'email': email, 'password': password},
+        options: useCookie
+            ? Options(headers: {DioClient.sessionModeHeaderName: 'cookie'})
+            : null,
       );
 
-      final data = response.data is Map<String, dynamic>
-          ? response.data as Map<String, dynamic>
+      final data = response.data is Map
+          ? Map<String, dynamic>.from(response.data as Map)
           : <String, dynamic>{};
+      final role = data['role'] as String?;
+      final sessionMode = data['session_mode'] as String?;
+
+      if (useCookie) {
+        if (sessionMode != 'cookie' &&
+            (role == null || role.isEmpty)) {
+          state = const AuthState(
+            isLoading: false,
+            isLoggedIn: false,
+            error: 'Resposta de autenticação inválida do servidor.',
+          );
+          return;
+        }
+
+        state = AuthState(
+          isLoading: false,
+          isLoggedIn: true,
+          role: role,
+        );
+        return;
+      }
+
       final accessToken = data['access_token'] as String?;
       final refreshToken = data['refresh_token'] as String?;
-      final role = data['role'] as String?;
 
       if (accessToken == null ||
           accessToken.isEmpty ||
@@ -100,14 +142,29 @@ class AuthNotifier extends Notifier<AuthState> {
 
   Future<void> logout() async {
     try {
-      final refreshToken = await _storage.read(key: 'refresh_token');
-      if (refreshToken != null && refreshToken.isNotEmpty) {
-        await _dio.post('/auth/logout', data: {'refresh_token': refreshToken});
+      if (_client.useCookieSession) {
+        await _dio.post<dynamic>(
+          '/auth/logout',
+          options: Options(headers: {DioClient.sessionModeHeaderName: 'cookie'}),
+        );
+      } else {
+        final refreshToken = await _storage.read(key: 'refresh_token');
+        if (refreshToken != null && refreshToken.isNotEmpty) {
+          await _dio.post<dynamic>(
+            '/auth/logout',
+            data: {'refresh_token': refreshToken},
+          );
+        }
       }
     } catch (_) {}
+
     await _storage.delete(key: 'access_token');
     await _storage.delete(key: 'refresh_token');
     await _storage.delete(key: 'user_role');
+    state = const AuthState();
+  }
+
+  void expireSession() {
     state = const AuthState();
   }
 }
