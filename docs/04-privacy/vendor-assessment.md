@@ -1,0 +1,12 @@
+# Avaliação Preliminar de Fornecedores (Vendor & Subprocessor Assessment)
+
+Avaliação técnica de risco, privacidade (DPA / residência de dados) e adequação de free-tier para os provedores do Fit Brother 2.0.
+
+| Fornecedor | Papel no Stack TO-BE | Região / Transferência Internacional | DPA / Conformidade | Riscos no Free-Tier & Controle |
+| :--- | :--- | :--- | :--- | :--- |
+| **Supabase** | Banco PostgreSQL gerenciado (`DATABASE_URL`) | Permite escolher **`sa-east-1` (São Paulo)** mesmo no Free Tier | DPA padrão disponível via dashboard (contrato padrão de processamento) | Pausa após **7 dias de inatividade**; limite 500 MB DB; **sem backups automáticos nem PITR no Free** (exige `pg_dump` externo automatizado via CI/local ou upgrade para Pro $25/mês no piloto comercial). |
+| **Render** | Runtime API Go (Web Service container) | US (Oregon/Virginia/Ohio) ou EU (Frankfurt) — não tem região BR | DPA disponível principalmente em planos pagos / mediante solicitação formal | **512 MB RAM / 0.1 CPU compartilhada**, dorme após 15m (cold start ~50s), **5 GB egress/mês** no free. Aceitável para dev/homologação; considerar Starter ($7/mês) ou Fly/Railway no piloto para evitar cold start. |
+| **Cloudflare (Pages + R2 + DNS)** | Hospedagem estática Flutter Web + Storage R2 de vídeos demo + Proxy/TLS | Rede Edge global (Anycast com PoPs no Brasil); R2 possui localização configurável (`EEUR`/`WNAM`/etc., sem garantias exclusivas BR no free) | DPA padrão online da Cloudflare | Pages: banda estática **ilimitada** no free; R2: 10 GB + 1M Class A + 10M Class B grátis e **$0 egress**. Risco se exceder cota com cartão cadastrado → configurar limites de tamanho/cota no backend. |
+| **Resend / Brevo** | SMTP transacional (convites e reset de senha) | EUA / UE | DPA padrão disponível | Resend Free: **3.000/mês, máx. 100/dia**; Brevo Free: **300/dia** (exibe marca Brevo no rodapé free). Não enviar PII sensível nos e-mails. |
+| **GitHub (Actions / Repo Privado)** | Código-fonte, CI/CD, SAST/SCA/SBOM e eventual backup cifrado de dev | EUA | DPA corporativo / GitHub Terms | Manter repositório **privado**, usar Actions oficiais com versão fixa e `permissions` mínimas; cuidado com limites de minutos gratuitos em repos privados (2.000 min/mês no plano Free). |
+| **Google Cloud Platform (GCP)** | **Em remoção (AS-IS citava Cloud Run)** | N/A | N/A | **Removido integralmente do roadmap de infraestrutura.** |

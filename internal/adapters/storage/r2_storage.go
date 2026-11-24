@@ -2,16 +2,26 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/smithy-go"
 
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/config"
 )
+
+var ErrObjectNotFound = errors.New("objeto não encontrado no storage")
+
+type ObjectMetadata struct {
+	SizeBytes int64
+	MimeType  string
+}
 
 type R2Storage struct {
 	client    *s3.Client
@@ -48,15 +58,42 @@ func NewR2Storage(cfg *config.R2Config) (*R2Storage, error) {
 	}, nil
 }
 
-func (s *R2Storage) GeneratePresignedUploadURL(ctx context.Context, key string, ttl time.Duration) (string, error) {
-	req, err := s.presigner.PresignPutObject(ctx, &s3.PutObjectInput{
+func (s *R2Storage) GeneratePresignedUploadURL(ctx context.Context, key string, contentType string, ttl time.Duration) (string, error) {
+	input := &s3.PutObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
-	}, s3.WithPresignExpires(ttl))
+	}
+	if contentType != "" {
+		input.ContentType = aws.String(contentType)
+	}
+	req, err := s.presigner.PresignPutObject(ctx, input, s3.WithPresignExpires(ttl))
 	if err != nil {
 		return "", fmt.Errorf("falha ao gerar presigned upload URL: %w", err)
 	}
 	return req.URL, nil
+}
+
+func (s *R2Storage) HeadObject(ctx context.Context, key string) (*ObjectMetadata, error) {
+	out, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		var respErr interface{ HTTPStatusCode() int }
+		if errors.As(err, &respErr) && respErr.HTTPStatusCode() == http.StatusNotFound {
+			return nil, ErrObjectNotFound
+		}
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && (apiErr.ErrorCode() == "NotFound" || apiErr.ErrorCode() == "NoSuchKey") {
+			return nil, ErrObjectNotFound
+		}
+		return nil, fmt.Errorf("falha ao consultar metadados no R2: %w", err)
+	}
+
+	return &ObjectMetadata{
+		SizeBytes: aws.ToInt64(out.ContentLength),
+		MimeType:  aws.ToString(out.ContentType),
+	}, nil
 }
 
 func (s *R2Storage) GenerateSignedURL(ctx context.Context, key string, ttl time.Duration) (string, error) {

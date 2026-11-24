@@ -22,13 +22,23 @@ import (
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/jwt"
 )
 
+// RouterDeps permite substituir adapters externos (ex.: storage) em testes de integração.
+type RouterDeps struct {
+	VideoStorage appvideo.StorageClient
+}
+
 func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
+	return SetupRouterWithDeps(cfg, db, RouterDeps{})
+}
+
+func SetupRouterWithDeps(cfg *config.Config, db *sqlx.DB, deps RouterDeps) (*gin.Engine, error) {
 	if cfg.App.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
 	router := gin.New()
 	router.Use(gin.Recovery())
+	router.Use(middleware.SecurityHeaders())
 	router.Use(cors.New(newCORSConfig(cfg.CORS.AllowedOrigins)))
 
 	passwordSvc, err := crypto.NewPasswordService(cfg.Crypto.PasswordPepper)
@@ -51,39 +61,46 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 		return nil, fmt.Errorf("falha configurando hash gen: %w", err)
 	}
 
+	txManager := postgres.NewTxManager(db)
 	userRepo := postgres.NewUserRepository(db)
 	studentRepo := postgres.NewStudentRepository(db)
 	workoutRepo := postgres.NewWorkoutRepository(db)
 	videoRepo := postgres.NewVideoRepository(db)
 
-	r2Storage, err := storage.NewR2Storage(&cfg.R2)
-	if err != nil {
-		return nil, fmt.Errorf("falha configurando R2 storage: %w", err)
+	videoStorage := deps.VideoStorage
+	if videoStorage == nil {
+		r2Storage, err := storage.NewR2Storage(&cfg.R2)
+		if err != nil {
+			return nil, fmt.Errorf("falha configurando R2 storage: %w", err)
+		}
+		videoStorage = r2Storage
 	}
 
 	loginUC := auth.NewLoginUseCase(userRepo, passwordSvc, jwtSvc, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
-	refreshUC := auth.NewRefreshUseCase(userRepo, jwtSvc, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
+	refreshUC := auth.NewRefreshUseCase(userRepo, txManager, jwtSvc, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
 	logoutUC := auth.NewLogoutUseCase(userRepo)
 
-	createStudentUC := student.NewCreateStudentUseCase(userRepo, studentRepo, passwordSvc, aesEncryptor, hashGen)
+	createStudentUC := student.NewCreateStudentUseCase(userRepo, studentRepo, txManager, passwordSvc, aesEncryptor, hashGen)
 	getStudentUC := student.NewGetStudentUseCase(userRepo, studentRepo, aesEncryptor)
 	listStudentsUC := student.NewListStudentsUseCase(studentRepo)
-	anonymizeStudentUC := student.NewAnonymizeStudentUseCase(userRepo, studentRepo)
+	anonymizeStudentUC := student.NewAnonymizeStudentUseCase(userRepo, studentRepo, txManager)
 
-	createPlanUC := appworkout.NewCreatePlanUseCase(workoutRepo)
+	createPlanUC := appworkout.NewCreatePlanUseCase(workoutRepo, studentRepo)
 	createSessionUC := appworkout.NewCreateSessionUseCase(workoutRepo)
 	createExerciseUC := appworkout.NewCreateExerciseUseCase(workoutRepo)
-	listPlansUC := appworkout.NewListPlansUseCase(workoutRepo)
-	getPlanDetailsUC := appworkout.NewGetPlanDetailsUseCase(workoutRepo)
+	listPlansUC := appworkout.NewListPlansUseCase(workoutRepo, studentRepo)
+	getPlanDetailsUC := appworkout.NewGetPlanDetailsUseCase(workoutRepo, studentRepo)
 
-	requestUploadURLUC := appvideo.NewRequestUploadURLUseCase(r2Storage, &cfg.R2)
-	confirmUploadUC := appvideo.NewConfirmUploadUseCase(videoRepo, r2Storage)
-	getSignedURLUC := appvideo.NewGetSignedURLUseCase(videoRepo, r2Storage, &cfg.R2)
+	requestUploadURLUC := appvideo.NewRequestUploadURLUseCase(videoRepo, workoutRepo, videoStorage, &cfg.R2)
+	confirmUploadUC := appvideo.NewConfirmUploadUseCase(videoRepo, workoutRepo, videoStorage)
+	getSignedURLUC := appvideo.NewGetSignedURLUseCase(videoRepo, workoutRepo, studentRepo, videoStorage, &cfg.R2)
 
 	authHandler := handler.NewAuthHandler(loginUC, refreshUC, logoutUC)
 	studentHandler := handler.NewStudentHandler(createStudentUC, getStudentUC, listStudentsUC, anonymizeStudentUC)
 	workoutHandler := handler.NewWorkoutHandler(createPlanUC, createSessionUC, createExerciseUC, listPlansUC, getPlanDetailsUC)
 	videoHandler := handler.NewVideoHandler(requestUploadURLUC, confirmUploadUC, getSignedURLUC)
+
+	authMiddleware := middleware.RequireAuth(jwtSvc, userRepo)
 
 	v1 := router.Group("/v1")
 	{
@@ -96,9 +113,9 @@ func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
 		})
 
 		authHandler.RegisterRoutes(v1)
-		studentHandler.RegisterRoutes(v1, middleware.RequireAuth(jwtSvc))
-		workoutHandler.RegisterRoutes(v1, middleware.RequireAuth(jwtSvc))
-		videoHandler.RegisterRoutes(v1, middleware.RequireAuth(jwtSvc))
+		studentHandler.RegisterRoutes(v1, authMiddleware)
+		workoutHandler.RegisterRoutes(v1, authMiddleware)
+		videoHandler.RegisterRoutes(v1, authMiddleware)
 	}
 
 	return router, nil

@@ -38,15 +38,20 @@ class _CreateExerciseScreenState extends ConsumerState<CreateExerciseScreen> {
   String? _videoFileName;
   bool _isLoading = false;
 
+  String _resolveMimeType(String filename) {
+    final lower = filename.toLowerCase();
+    if (lower.endsWith('.webm')) return 'video/webm';
+    if (lower.endsWith('.mov')) return 'video/quicktime';
+    return 'video/mp4';
+  }
+
   Future<void> _pickVideo() async {
-    // Pick video specifically on Web (returns bytes)
-    FilePickerResult? result = await FilePicker.pickFiles(
+    final FilePickerResult? result = await FilePicker.pickFiles(
       type: FileType.video,
       withData: true,
     );
 
     if (result != null && result.files.single.bytes != null) {
-      // Basic check to see if it's too large (ex: > 50MB)
       final sizeMb = result.files.single.bytes!.length / (1024 * 1024);
       if (sizeMb > 50) {
         if (!mounted) return;
@@ -71,46 +76,9 @@ class _CreateExerciseScreenState extends ConsumerState<CreateExerciseScreen> {
 
     try {
       final dio = ref.read(dioClientProvider).dio;
-      String finalVideoUrl = '';
 
-      // 1. Lógica de Upload do Vídeo via R2 (Presigned URL)
-      if (_videoBytes != null && _videoFileName != null) {
-        // Passo 1: Solicitar URL pré-assinada
-        final reqResponse = await dio.post(
-          '/videos/request-upload',
-          data: {
-            'filename': _videoFileName,
-            'content_type':
-                'video/mp4', // Genérico, o ideal seria inspecionar o arquivo real
-          },
-        );
-
-        final uploadUrl = reqResponse.data['upload_url'];
-        final videoId = reqResponse.data['video_id'];
-        final publicUrl = reqResponse.data['public_url'];
-
-        // Passo 2: Fazer o upload binário direto para a Cloudflare R2
-        final uploadDio =
-            Dio(); // Dio virgem sem os interceptors de Headers de Auth para evitar conflitos com a AWS/R2
-        await uploadDio.put(
-          uploadUrl,
-          data: Stream.fromIterable([_videoBytes!]),
-          options: Options(
-            headers: {
-              'Content-Type': 'video/mp4',
-              'Content-Length': _videoBytes!.length.toString(),
-            },
-          ),
-        );
-
-        // Passo 3: Confirmar Upload na API
-        await dio.post('/videos/confirm', data: {'video_id': videoId});
-
-        finalVideoUrl = publicUrl;
-      }
-
-      // 2. Salvar Exercício
-      await dio.post(
+      // 1. Criar o exercício primeiro para obter exercise_id válido para vínculo do vídeo
+      final exResponse = await dio.post(
         '/workouts/sessions/${widget.sessionId}/exercises',
         data: {
           'workout_session_id': widget.sessionId,
@@ -119,10 +87,59 @@ class _CreateExerciseScreenState extends ConsumerState<CreateExerciseScreen> {
           'reps': _reps,
           'rest_seconds': _restSeconds,
           'notes': _notes,
-          'video_url': finalVideoUrl,
+          'video_url': '',
           'position': _position,
         },
       );
+
+      final exerciseId = (exResponse.data as Map)['id'] as String?;
+
+      // 2. Se houver vídeo selecionado, executar fluxo alinhado ao contrato da API Go
+      if (_videoBytes != null &&
+          _videoFileName != null &&
+          exerciseId != null &&
+          exerciseId.isNotEmpty) {
+        final mimeType = _resolveMimeType(_videoFileName!);
+
+        // Passo A: Solicitar intenção de upload e URL pré-assinada
+        final reqResponse = await dio.post(
+          '/videos/upload-url',
+          data: {
+            'exercise_id': exerciseId,
+            'filename': _videoFileName,
+            'mime_type': mimeType,
+          },
+        );
+
+        final reqData = reqResponse.data as Map;
+        final presignedUrl = reqData['presigned_url'] as String;
+        final r2Key = reqData['r2_key'] as String;
+
+        // Passo B: Upload binário direto para a presigned URL (sem header Authorization da API)
+        final uploadDio = Dio();
+        await uploadDio.put(
+          presignedUrl,
+          data: _videoBytes!,
+          options: Options(
+            headers: {
+              'Content-Type': mimeType,
+              'Content-Length': _videoBytes!.length,
+            },
+          ),
+        );
+
+        // Passo C: Confirmar upload na API para validação HeadObject e persistência CONFIRMED
+        await dio.post(
+          '/videos',
+          data: {
+            'exercise_id': exerciseId,
+            'r2_key': r2Key,
+            'filename': _videoFileName,
+            'size_bytes': _videoBytes!.length,
+            'mime_type': mimeType,
+          },
+        );
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -184,8 +201,8 @@ class _CreateExerciseScreenState extends ConsumerState<CreateExerciseScreen> {
                           keyboardType: TextInputType.number,
                           validator: (val) =>
                               val == null || int.tryParse(val) == null
-                              ? 'Inválido'
-                              : null,
+                                  ? 'Inválido'
+                                  : null,
                           onSaved: (val) => _sets = int.parse(val!),
                         ),
                       ),
@@ -213,8 +230,8 @@ class _CreateExerciseScreenState extends ConsumerState<CreateExerciseScreen> {
                           keyboardType: TextInputType.number,
                           validator: (val) =>
                               val == null || int.tryParse(val) == null
-                              ? 'Inválido'
-                              : null,
+                                  ? 'Inválido'
+                                  : null,
                           onSaved: (val) => _restSeconds = int.parse(val!),
                         ),
                       ),
@@ -229,8 +246,8 @@ class _CreateExerciseScreenState extends ConsumerState<CreateExerciseScreen> {
                           initialValue: '1',
                           validator: (val) =>
                               val == null || int.tryParse(val) == null
-                              ? 'Inválido'
-                              : null,
+                                  ? 'Inválido'
+                                  : null,
                           onSaved: (val) => _position = int.parse(val!),
                         ),
                       ),
@@ -283,7 +300,7 @@ class _CreateExerciseScreenState extends ConsumerState<CreateExerciseScreen> {
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          'Máx 50MB. MP4 recomendado.',
+                          'Máx 50MB. MP4, WebM ou MOV.',
                           style: TextStyle(fontSize: 12, color: Colors.grey),
                         ),
                       ],

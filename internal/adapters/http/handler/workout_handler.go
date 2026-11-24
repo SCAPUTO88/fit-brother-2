@@ -8,6 +8,7 @@ import (
 
 	"github.com/SCAPUTO88/fit-brother/internal/adapters/http/middleware"
 	appworkout "github.com/SCAPUTO88/fit-brother/internal/application/workout"
+	"github.com/SCAPUTO88/fit-brother/internal/domain/user"
 )
 
 type WorkoutHandler struct {
@@ -36,7 +37,9 @@ func NewWorkoutHandler(
 
 func (h *WorkoutHandler) RegisterRoutes(router *gin.RouterGroup, auther gin.HandlerFunc) {
 	g := router.Group("/workouts")
-	g.Use(auther)
+	if auther != nil {
+		g.Use(auther)
+	}
 
 	g.POST("", h.CreatePlan)
 	g.GET("", h.ListPlans)
@@ -51,14 +54,14 @@ func (h *WorkoutHandler) CreatePlan(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "acesso negado"})
 		return
 	}
-	if claims.Role != "TRAINER" {
+	if claims.Role != user.RoleTrainer {
 		c.JSON(http.StatusForbidden, gin.H{"error": "apenas treinadores podem criar planos de treino"})
 		return
 	}
 
 	var input appworkout.CreatePlanInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "dados inválidos: " + err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "dados inválidos"})
 		return
 	}
 
@@ -66,7 +69,7 @@ func (h *WorkoutHandler) CreatePlan(c *gin.Context) {
 
 	out, err := h.createPlanUC.Execute(c.Request.Context(), input)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondDomainError(c, err, "falha ao criar plano de treino")
 		return
 	}
 
@@ -84,7 +87,7 @@ func (h *WorkoutHandler) GetPlanDetails(c *gin.Context) {
 
 	out, err := h.getPlanDetailsUC.Execute(c.Request.Context(), planIDStr, claims.UserID, claims.Role)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondDomainError(c, err, "falha ao carregar detalhes do plano")
 		return
 	}
 
@@ -98,23 +101,21 @@ func (h *WorkoutHandler) ListPlans(c *gin.Context) {
 		return
 	}
 
-	claimsUserID := claims.UserID
-
 	var plans []*appworkout.PlanOutput
 	var err error
 
 	switch claims.Role {
-	case "TRAINER":
-		plans, err = h.listPlansUC.ByTrainer(c.Request.Context(), claimsUserID)
-	case "STUDENT":
-		plans, err = h.listPlansUC.ByStudent(c.Request.Context(), claimsUserID)
+	case user.RoleTrainer:
+		plans, err = h.listPlansUC.ByTrainer(c.Request.Context(), claims.UserID)
+	case user.RoleStudent:
+		plans, err = h.listPlansUC.ByStudent(c.Request.Context(), claims.UserID)
 	default:
 		c.JSON(http.StatusForbidden, gin.H{"error": "role desconhecida"})
 		return
 	}
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondDomainError(c, err, "falha ao listar planos de treino")
 		return
 	}
 
@@ -127,7 +128,7 @@ func (h *WorkoutHandler) CreateSession(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "acesso negado"})
 		return
 	}
-	if claims.Role != "TRAINER" {
+	if claims.Role != user.RoleTrainer {
 		c.JSON(http.StatusForbidden, gin.H{"error": "apenas treinadores podem adicionar sessões"})
 		return
 	}
@@ -140,14 +141,14 @@ func (h *WorkoutHandler) CreateSession(c *gin.Context) {
 
 	var input appworkout.CreateSessionInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "dados inválidos: " + err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "dados inválidos"})
 		return
 	}
 	input.WorkoutPlanID = planIDStr
 
-	out, err := h.createSessionUC.Execute(c.Request.Context(), input)
+	out, err := h.createSessionUC.Execute(c.Request.Context(), claims.UserID, input)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondDomainError(c, err, "falha ao criar sessão")
 		return
 	}
 
@@ -160,7 +161,7 @@ func (h *WorkoutHandler) CreateExercise(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "acesso negado"})
 		return
 	}
-	if claims.Role != "TRAINER" {
+	if claims.Role != user.RoleTrainer {
 		c.JSON(http.StatusForbidden, gin.H{"error": "apenas treinadores podem adicionar exercícios"})
 		return
 	}
@@ -173,14 +174,14 @@ func (h *WorkoutHandler) CreateExercise(c *gin.Context) {
 
 	var input appworkout.CreateExerciseInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "dados inválidos: " + err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "dados inválidos"})
 		return
 	}
 	input.WorkoutSessionID = sessionIDStr
 
-	out, err := h.createExerciseUC.Execute(c.Request.Context(), input)
+	out, err := h.createExerciseUC.Execute(c.Request.Context(), claims.UserID, input)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondDomainError(c, err, "falha ao criar exercício")
 		return
 	}
 

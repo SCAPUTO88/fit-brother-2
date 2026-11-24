@@ -79,9 +79,8 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		return
 	}
 
-	err := h.logoutUseCase.Execute(c.Request.Context(), input)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.logoutUseCase.Execute(c.Request.Context(), input); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "falha ao encerrar sessão"})
 		return
 	}
 

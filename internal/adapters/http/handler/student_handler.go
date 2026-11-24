@@ -4,10 +4,11 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"github.com/SCAPUTO88/fit-brother/internal/adapters/http/middleware"
 	"github.com/SCAPUTO88/fit-brother/internal/application/student"
-	"github.com/google/uuid"
+	"github.com/SCAPUTO88/fit-brother/internal/domain/user"
 )
 
 type StudentHandler struct {
@@ -32,34 +33,41 @@ func NewStudentHandler(
 }
 
 func (h *StudentHandler) RegisterRoutes(router *gin.RouterGroup, auther gin.HandlerFunc) {
-	group := router.Group("/students")
-
-	group.POST("", h.Create)
-
-	protected := group.Group("")
+	protected := router.Group("/students")
 	if auther != nil {
 		protected.Use(auther)
 	}
+	protected.POST("", h.Create)
 	protected.GET("", h.List)
 	protected.GET("/:id", h.GetByID)
 	protected.DELETE("/:id", h.Anonymize)
 }
 
 func (h *StudentHandler) Create(c *gin.Context) {
-	var input student.CreateStudentInput
-
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "dados inválidos: " + err.Error()})
+	claims, ok := middleware.GetClaims(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "acesso negado, sessão inválida"})
 		return
 	}
+	if claims.Role != user.RoleTrainer {
+		c.JSON(http.StatusForbidden, gin.H{"error": "apenas treinadores podem cadastrar alunos"})
+		return
+	}
+
+	var input student.CreateStudentInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "dados inválidos"})
+		return
+	}
+	input.TrainerID = claims.UserID
 
 	out, err := h.createUC.Execute(c.Request.Context(), input)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondDomainError(c, err, "falha ao cadastrar aluno")
 		return
 	}
 
-	c.JSON(http.StatusOK, out)
+	c.JSON(http.StatusCreated, out)
 }
 
 func (h *StudentHandler) GetByID(c *gin.Context) {
@@ -69,21 +77,15 @@ func (h *StudentHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	uidParam := c.Param("id")
-	studID, err := uuid.Parse(uidParam)
+	studID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id inválido, formato uid esperado"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id inválido, formato uuid esperado"})
 		return
 	}
 
-	out, err := h.getUC.Execute(c.Request.Context(), studID)
+	out, err := h.getUC.Execute(c.Request.Context(), studID, claims.UserID, claims.Role)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
-
-	if claims.Role == "STUDENT" && claims.UserID.String() != out.UserID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "você não tem permissão para visualizar o CPF/Laudo Biométrico de outros perfis"})
+		respondDomainError(c, err, "falha ao consultar aluno")
 		return
 	}
 
@@ -97,24 +99,14 @@ func (h *StudentHandler) Anonymize(c *gin.Context) {
 		return
 	}
 
-	uidParam := c.Param("id")
-	studID, err := uuid.Parse(uidParam)
+	studID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "id inválido"})
 		return
 	}
 
-	if claims.Role == "STUDENT" {
-		out, _ := h.getUC.Execute(c.Request.Context(), studID)
-		if out != nil && claims.UserID.String() != out.UserID {
-			c.JSON(http.StatusForbidden, gin.H{"error": "não é permitido solicitar anonimização de terceiros"})
-			return
-		}
-	}
-
-	err = h.anonymizeUC.Execute(c.Request.Context(), studID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "falha ao purgar dados: " + err.Error()})
+	if err := h.anonymizeUC.Execute(c.Request.Context(), studID, claims.UserID, claims.Role); err != nil {
+		respondDomainError(c, err, "falha ao anonimizar aluno")
 		return
 	}
 
@@ -122,15 +114,19 @@ func (h *StudentHandler) Anonymize(c *gin.Context) {
 }
 
 func (h *StudentHandler) List(c *gin.Context) {
-	_, ok := middleware.GetClaims(c)
+	claims, ok := middleware.GetClaims(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "acesso negado, sessão inválida"})
 		return
 	}
+	if claims.Role != user.RoleTrainer {
+		c.JSON(http.StatusForbidden, gin.H{"error": "apenas treinadores podem listar alunos"})
+		return
+	}
 
-	out, err := h.listUC.Execute(c.Request.Context())
+	out, err := h.listUC.Execute(c.Request.Context(), claims.UserID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondDomainError(c, err, "falha ao listar alunos")
 		return
 	}
 

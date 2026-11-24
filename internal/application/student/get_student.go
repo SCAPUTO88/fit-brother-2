@@ -3,10 +3,12 @@ package student
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/SCAPUTO88/fit-brother/internal/domain/errs"
 	domainS "github.com/SCAPUTO88/fit-brother/internal/domain/student"
 	domainU "github.com/SCAPUTO88/fit-brother/internal/domain/user"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/crypto"
@@ -30,24 +32,27 @@ func NewGetStudentUseCase(
 	}
 }
 
-// Execute recupera um estudante mesclando dados da entidade de Autenticação e
-// descriptografando o CPF em Tempo Real GCM, consumindo o mínimo de memória temporária.
-func (c *GetStudentUseCase) Execute(ctx context.Context, studentID uuid.UUID) (*StudentDetailOutput, error) {
-
-	// 1. Puxamos nossos dados Biometricos / CPF Cifrado
+func (c *GetStudentUseCase) Execute(ctx context.Context, studentID, requesterID uuid.UUID, role string) (*StudentDetailOutput, error) {
 	stud, err := c.studRepo.GetByID(ctx, studentID)
-	if err != nil || stud == nil {
-		return nil, errors.New("aluno não encontrado")
+	if err != nil {
+		return nil, errors.New("falha ao buscar dados do aluno")
+	}
+	if stud == nil {
+		return nil, fmt.Errorf("%w: aluno não encontrado", errs.ErrNotFound)
 	}
 
-	// 2. Puxamos nosso Perfil Base
+	if err := authorizeStudentAccess(stud, requesterID, role); err != nil {
+		return nil, err
+	}
+
 	usr, err := c.userRepo.GetByID(ctx, stud.UserID)
-	if err != nil || usr == nil {
-		return nil, errors.New("perfil base corrompido ou inativo")
+	if err != nil {
+		return nil, errors.New("falha ao buscar perfil do usuário")
+	}
+	if usr == nil {
+		return nil, fmt.Errorf("%w: perfil base corrompido ou inativo", errs.ErrNotFound)
 	}
 
-	// 3. Descriptografia GCM
-	// Usamos o Validation-Binding AAD (O proprio ID é a prova de violação)!
 	clearCPF, err := c.encryptor.Decrypt(stud.CPFEncrypted, []byte(stud.ID.String()))
 	if err != nil {
 		return nil, errors.New("falha grave de segurança: corrupção no CPF armazenado (AAD Invalido)")
@@ -61,4 +66,21 @@ func (c *GetStudentUseCase) Execute(ctx context.Context, studentID uuid.UUID) (*
 		CPF:       clearCPF,
 		CreatedAt: stud.CreatedAt.Format(time.RFC3339),
 	}, nil
+}
+
+func authorizeStudentAccess(stud *domainS.Student, requesterID uuid.UUID, role string) error {
+	switch role {
+	case domainU.RoleStudent:
+		if stud.UserID != requesterID {
+			return fmt.Errorf("%w: você não tem permissão para acessar outros perfis", errs.ErrForbidden)
+		}
+		return nil
+	case domainU.RoleTrainer:
+		if stud.TrainerID == nil || *stud.TrainerID != requesterID {
+			return fmt.Errorf("%w: você não tem permissão para acessar este aluno", errs.ErrForbidden)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%w: acesso negado", errs.ErrForbidden)
+	}
 }

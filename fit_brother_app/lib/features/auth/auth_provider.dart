@@ -12,23 +12,30 @@ final dioClientProvider = Provider<DioClient>((ref) {
   return DioClient(secureStorage: storage);
 });
 
-// Estado simples de autenticação
 class AuthState {
   final bool isLoading;
   final String? error;
   final bool isLoggedIn;
+  final String? role;
 
   const AuthState({
     this.isLoading = false,
     this.error,
     this.isLoggedIn = false,
+    this.role,
   });
 
-  AuthState copyWith({bool? isLoading, String? error, bool? isLoggedIn}) {
+  AuthState copyWith({
+    bool? isLoading,
+    String? error,
+    bool? isLoggedIn,
+    String? role,
+  }) {
     return AuthState(
       isLoading: isLoading ?? this.isLoading,
       error: error,
       isLoggedIn: isLoggedIn ?? this.isLoggedIn,
+      role: role ?? this.role,
     );
   }
 }
@@ -43,35 +50,64 @@ class AuthNotifier extends Notifier<AuthState> {
   Future<void> login(String email, String password) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final response = await _dio.post('/auth/login', data: {
-        'email': email,
-        'password': password,
-      });
+      final response = await _dio.post(
+        '/auth/login',
+        data: {'email': email, 'password': password},
+      );
 
-      final accessToken = response.data['access_token'] as String?;
-      final refreshToken = response.data['refresh_token'] as String?;
+      final data = response.data is Map<String, dynamic>
+          ? response.data as Map<String, dynamic>
+          : <String, dynamic>{};
+      final accessToken = data['access_token'] as String?;
+      final refreshToken = data['refresh_token'] as String?;
+      final role = data['role'] as String?;
 
-      if (accessToken != null && refreshToken != null) {
-        await _storage.write(key: 'access_token', value: accessToken);
-        await _storage.write(key: 'refresh_token', value: refreshToken);
+      if (accessToken == null ||
+          accessToken.isEmpty ||
+          refreshToken == null ||
+          refreshToken.isEmpty) {
+        state = const AuthState(
+          isLoading: false,
+          isLoggedIn: false,
+          error: 'Resposta de autenticação inválida do servidor.',
+        );
+        return;
       }
 
-      state = state.copyWith(isLoading: false, isLoggedIn: true);
+      await _storage.write(key: 'access_token', value: accessToken);
+      await _storage.write(key: 'refresh_token', value: refreshToken);
+      if (role != null && role.isNotEmpty) {
+        await _storage.write(key: 'user_role', value: role);
+      }
+
+      state = AuthState(
+        isLoading: false,
+        isLoggedIn: true,
+        role: role,
+      );
     } on DioException catch (e) {
       final message = (e.response?.data as Map?)?['error'] as String? ??
           'Erro de conexão';
-      state = state.copyWith(isLoading: false, error: message);
+      state = state.copyWith(isLoading: false, isLoggedIn: false, error: message);
     } catch (_) {
-      state = state.copyWith(isLoading: false, error: 'Ocorreu um erro inesperado.');
+      state = state.copyWith(
+        isLoading: false,
+        isLoggedIn: false,
+        error: 'Ocorreu um erro inesperado.',
+      );
     }
   }
 
   Future<void> logout() async {
     try {
-      await _dio.post('/auth/logout');
+      final refreshToken = await _storage.read(key: 'refresh_token');
+      if (refreshToken != null && refreshToken.isNotEmpty) {
+        await _dio.post('/auth/logout', data: {'refresh_token': refreshToken});
+      }
     } catch (_) {}
     await _storage.delete(key: 'access_token');
     await _storage.delete(key: 'refresh_token');
+    await _storage.delete(key: 'user_role');
     state = const AuthState();
   }
 }

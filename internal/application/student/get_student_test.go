@@ -2,6 +2,7 @@ package student_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -10,20 +11,20 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/SCAPUTO88/fit-brother/internal/application/student"
+	"github.com/SCAPUTO88/fit-brother/internal/domain/errs"
 	domainS "github.com/SCAPUTO88/fit-brother/internal/domain/student"
 	domainU "github.com/SCAPUTO88/fit-brother/internal/domain/user"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/crypto"
 )
 
 func TestGetStudentUseCase(t *testing.T) {
-	ctx := context.TODO()
+	ctx := context.Background()
 
-	// Simulador de chaves para que a decriptografia funcione no mock
-	aesKey := "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=" // 32 bytes validos base64 ("12345678901234567890123456789012")
+	aesKey := "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI="
 	encrptSvc, err := crypto.NewAESEncryptor(aesKey)
 	require.NoError(t, err)
 
-	t.Run("Deve retornar o Student descriptografando o CPF perfeitamente", func(t *testing.T) {
+	t.Run("Deve retornar o Student descriptografando o CPF para o treinador responsavel", func(t *testing.T) {
 		mockURepo := new(MockUserRepo)
 		mockSRepo := new(MockStudentRepo)
 
@@ -31,13 +32,14 @@ func TestGetStudentUseCase(t *testing.T) {
 
 		studID := uuid.New()
 		userID := uuid.New()
+		trainerID := uuid.New()
 
-		// Dado mockado no banco: CPF ENCRIPTADO
 		encryptedVal, _ := encrptSvc.Encrypt("99988877766", []byte(studID.String()))
 
 		mockSRepo.On("GetByID", ctx, studID).Return(&domainS.Student{
 			ID:           studID,
 			UserID:       userID,
+			TrainerID:    &trainerID,
 			CPFEncrypted: encryptedVal,
 			CreatedAt:    time.Now(),
 		}, nil)
@@ -48,14 +50,51 @@ func TestGetStudentUseCase(t *testing.T) {
 			FullName: "Buscador Silva",
 		}, nil)
 
-		// Executar UseCase
-		out, err := sut.Execute(ctx, studID)
+		out, err := sut.Execute(ctx, studID, trainerID, domainU.RoleTrainer)
 
 		require.NoError(t, err)
 		assert.Equal(t, "busca@fit.com", out.Email)
-
-		// MAGIA DA SEGURANÇA: O dado volta desencriptado, mas apenas nesse momento de Request
-		// Não fica mantido em variavel global.
 		assert.Equal(t, "99988877766", out.CPF)
+	})
+
+	t.Run("Deve negar acesso quando outro treinador tentar consultar o aluno", func(t *testing.T) {
+		mockURepo := new(MockUserRepo)
+		mockSRepo := new(MockStudentRepo)
+		sut := student.NewGetStudentUseCase(mockURepo, mockSRepo, encrptSvc)
+
+		studID := uuid.New()
+		trainerA := uuid.New()
+		trainerB := uuid.New()
+
+		mockSRepo.On("GetByID", ctx, studID).Return(&domainS.Student{
+			ID:        studID,
+			UserID:    uuid.New(),
+			TrainerID: &trainerA,
+		}, nil)
+
+		out, err := sut.Execute(ctx, studID, trainerB, domainU.RoleTrainer)
+		require.Nil(t, out)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, errs.ErrForbidden))
+	})
+
+	t.Run("Deve negar acesso quando outro aluno tentar consultar perfil de terceiro", func(t *testing.T) {
+		mockURepo := new(MockUserRepo)
+		mockSRepo := new(MockStudentRepo)
+		sut := student.NewGetStudentUseCase(mockURepo, mockSRepo, encrptSvc)
+
+		studID := uuid.New()
+		trainerID := uuid.New()
+
+		mockSRepo.On("GetByID", ctx, studID).Return(&domainS.Student{
+			ID:        studID,
+			UserID:    uuid.New(),
+			TrainerID: &trainerID,
+		}, nil)
+
+		out, err := sut.Execute(ctx, studID, uuid.New(), domainU.RoleStudent)
+		require.Nil(t, out)
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, errs.ErrForbidden))
 	})
 }

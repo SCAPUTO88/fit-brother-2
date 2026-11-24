@@ -9,11 +9,12 @@ import (
 )
 
 type Student struct {
-	ID           uuid.UUID `db:"id"`
-	UserID       uuid.UUID `db:"user_id"`
-	CPFEncrypted string    `db:"cpf_encrypted"`
-	CPFHash      string    `db:"cpf_hash"`
-	CreatedAt    time.Time `db:"created_at"`
+	ID           uuid.UUID  `db:"id"`
+	UserID       uuid.UUID  `db:"user_id"`
+	TrainerID    *uuid.UUID `db:"trainer_id"`
+	CPFEncrypted string     `db:"cpf_encrypted"`
+	CPFHash      string     `db:"cpf_hash"`
+	CreatedAt    time.Time  `db:"created_at"`
 
 	cleanCPF string
 }
@@ -26,9 +27,12 @@ type StudentBaseInfo struct {
 
 var numericOnlyRegex = regexp.MustCompile(`[^0-9]+`)
 
-func NewStudent(userID uuid.UUID, rawCPF string) (*Student, error) {
+func NewStudent(userID, trainerID uuid.UUID, rawCPF string) (*Student, error) {
 	if userID == uuid.Nil {
 		return nil, errors.New("o UserID é obrigatório")
+	}
+	if trainerID == uuid.Nil {
+		return nil, errors.New("o TrainerID é obrigatório")
 	}
 
 	cleanCPF := numericOnlyRegex.ReplaceAllString(rawCPF, "")
@@ -36,9 +40,11 @@ func NewStudent(userID uuid.UUID, rawCPF string) (*Student, error) {
 		return nil, errors.New("o CPF deve conter exatamente 11 digitos numericos")
 	}
 
+	tid := trainerID
 	return &Student{
 		ID:        uuid.New(),
 		UserID:    userID,
+		TrainerID: &tid,
 		cleanCPF:  cleanCPF,
 		CreatedAt: time.Now(),
 	}, nil

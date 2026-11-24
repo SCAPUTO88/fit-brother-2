@@ -18,6 +18,7 @@ type Repository interface {
 	ListSessionsByPlan(ctx context.Context, planID uuid.UUID) ([]*WorkoutSession, error)
 
 	CreateExercise(ctx context.Context, exercise *Exercise) error
+	GetExerciseByID(ctx context.Context, id uuid.UUID) (*Exercise, error)
 	ListExercisesBySession(ctx context.Context, sessionID uuid.UUID) ([]*Exercise, error)
 	DeleteExercise(ctx context.Context, id uuid.UUID) error
 }

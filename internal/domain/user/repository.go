@@ -20,4 +20,5 @@ type Repository interface {
 	GetRefreshTokenByHash(ctx context.Context, tokenHash string) (*RefreshToken, error)
 	RevokeRefreshToken(ctx context.Context, id uuid.UUID) error
 	RevokeTokenFamily(ctx context.Context, familyID uuid.UUID) error
+	RevokeAllByUserID(ctx context.Context, userID uuid.UUID) error
 }

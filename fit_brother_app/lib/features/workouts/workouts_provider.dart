@@ -75,7 +75,7 @@ class SessionDetails {
   factory SessionDetails.fromJson(Map<String, dynamic> json) {
     final sessionMap = json['session'] as Map<String, dynamic>;
     final exercisesList = json['exercises'] as List? ?? [];
-    
+
     return SessionDetails(
       id: sessionMap['id'] as String,
       title: sessionMap['title'] as String,
@@ -95,7 +95,7 @@ class PlanDetails {
   factory PlanDetails.fromJson(Map<String, dynamic> json) {
     final planMap = json['plan'] as Map<String, dynamic>;
     final sessionsList = json['sessions'] as List? ?? [];
-    
+
     return PlanDetails(
       plan: WorkoutPlanSummary.fromJson(planMap),
       sessions: sessionsList.map((e) => SessionDetails.fromJson(e as Map<String, dynamic>)).toList(),
@@ -106,6 +106,10 @@ class PlanDetails {
 // ---------- Provider ----------
 
 final workoutPlansProvider = FutureProvider<List<WorkoutPlanSummary>>((ref) async {
+  final isLoggedIn = ref.watch(authProvider.select((s) => s.isLoggedIn));
+  if (!isLoggedIn) {
+    return const [];
+  }
   final dioClient = ref.watch(dioClientProvider);
   final response = await dioClient.dio.get('/workouts');
   final List data = response.data as List;
@@ -113,6 +117,10 @@ final workoutPlansProvider = FutureProvider<List<WorkoutPlanSummary>>((ref) asyn
 });
 
 final planDetailsProvider = FutureProvider.family<PlanDetails, String>((ref, id) async {
+  final isLoggedIn = ref.watch(authProvider.select((s) => s.isLoggedIn));
+  if (!isLoggedIn) {
+    throw StateError('Usuário não autenticado');
+  }
   final dioClient = ref.watch(dioClientProvider);
   final response = await dioClient.dio.get('/workouts/$id');
   return PlanDetails.fromJson(response.data as Map<String, dynamic>);
