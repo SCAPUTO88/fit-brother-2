@@ -176,6 +176,8 @@ func (h *AuthHandler) setSessionCookies(c *gin.Context, out *auth.TokenOutput) e
 	secure := h.shouldUseSecureCookies(c)
 	refreshMaxAge := int(h.refreshTTL.Seconds())
 
+	// Secure é true em produção e HTTPS; dev local HTTP exige flexibilização via shouldUseSecureCookies.
+	// nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     middleware.AccessCookieName,
 		Value:    out.AccessToken,
@@ -185,6 +187,7 @@ func (h *AuthHandler) setSessionCookies(c *gin.Context, out *auth.TokenOutput) e
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
+	// nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     middleware.RefreshCookieName,
 		Value:    out.RefreshToken,
@@ -194,6 +197,8 @@ func (h *AuthHandler) setSessionCookies(c *gin.Context, out *auth.TokenOutput) e
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
+	// Cookie CSRF usa padrão Double-Submit Cookie (ADR-008): precisa ser legível via JS para X-CSRF-Token; não contém sessão/JWT.
+	// nosemgrep: go.lang.security.audit.net.cookie-missing-httponly.cookie-missing-httponly,go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     middleware.CSRFCookieName,
 		Value:    csrfToken,
@@ -211,6 +216,7 @@ func (h *AuthHandler) clearSessionCookies(c *gin.Context) {
 	secure := h.shouldUseSecureCookies(c)
 	expired := time.Unix(0, 0)
 
+	// nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     middleware.AccessCookieName,
 		Value:    "",
@@ -221,6 +227,7 @@ func (h *AuthHandler) clearSessionCookies(c *gin.Context) {
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
+	// nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     middleware.RefreshCookieName,
 		Value:    "",
@@ -231,6 +238,7 @@ func (h *AuthHandler) clearSessionCookies(c *gin.Context) {
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
+	// nosemgrep: go.lang.security.audit.net.cookie-missing-httponly.cookie-missing-httponly,go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     middleware.CSRFCookieName,
 		Value:    "",
