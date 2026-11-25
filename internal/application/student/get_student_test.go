@@ -2,6 +2,7 @@ package student_test
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ import (
 func TestGetStudentUseCase(t *testing.T) {
 	ctx := context.Background()
 
-	aesKey := "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI="
+	aesKey := base64.StdEncoding.EncodeToString([]byte("12345678901234567890123456789012"))
 	encrptSvc, err := crypto.NewAESEncryptor(aesKey)
 	require.NoError(t, err)
 

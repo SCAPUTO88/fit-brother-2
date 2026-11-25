@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -10,8 +11,9 @@ import (
 
 func setMinimalRequiredEnv(t *testing.T) {
 	t.Helper()
+	testAESKey := base64.StdEncoding.EncodeToString([]byte("test-aes-key-32-bytes-unit-only!"))
 	t.Setenv("DATABASE_URL", "postgres://fitbrother:secret@localhost:5432/fitbrother_test?sslmode=disable")
-	t.Setenv("AES_KEY", "dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleTA=")
+	t.Setenv("AES_KEY", testAESKey)
 	t.Setenv("CPF_HMAC_SECRET", "test-hmac-secret-for-ci-only-32chars!")
 	t.Setenv("PASSWORD_PEPPER", "test-pepper-for-ci-only-32chars!!")
 	t.Setenv("REDIS_URL", "")

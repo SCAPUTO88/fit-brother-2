@@ -13,12 +13,18 @@ import (
 )
 
 func TestCORSConfigUsesConfiguredOrigins(t *testing.T) {
-	corsConfig := newCORSConfig("http://localhost:3000, http://localhost:5173")
+	corsConfig, err := newCORSConfig("http://localhost:3000, http://localhost:5173")
+	require.NoError(t, err)
 
 	require.Equal(t, []string{
 		"http://localhost:3000",
 		"http://localhost:5173",
 	}, corsConfig.AllowOrigins)
+}
+
+func TestCORSConfigRejectsWildcard(t *testing.T) {
+	_, err := newCORSConfig("http://localhost:3000, *")
+	require.Error(t, err)
 }
 
 func TestNewJWTServiceUsesPEMConfig(t *testing.T) {
