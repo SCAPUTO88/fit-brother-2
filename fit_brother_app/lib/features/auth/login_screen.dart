@@ -130,8 +130,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       : const Text('ENTRAR', style: TextStyle(fontSize: 16)),
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  spacing: 8,
+                  runSpacing: 4,
                   children: [
                     TextButton(
                       onPressed: () => context.push('/forgot-password'),

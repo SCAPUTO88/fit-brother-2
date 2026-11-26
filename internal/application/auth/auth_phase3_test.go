@@ -2,8 +2,12 @@ package auth_test
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base32"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"testing"
 	"time"
@@ -17,8 +21,113 @@ import (
 	domainMailer "github.com/SCAPUTO88/fit-brother/internal/domain/mailer"
 	domainU "github.com/SCAPUTO88/fit-brother/internal/domain/user"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/crypto"
+	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/jwt"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/totp"
 )
+
+type memUserRepo struct {
+	users  map[uuid.UUID]*domainU.User
+	tokens map[string]*domainU.RefreshToken
+}
+
+func newMemUserRepo() *memUserRepo {
+	return &memUserRepo{
+		users:  make(map[uuid.UUID]*domainU.User),
+		tokens: make(map[string]*domainU.RefreshToken),
+	}
+}
+
+func (m *memUserRepo) Create(_ context.Context, u *domainU.User) error {
+	cp := *u
+	m.users[u.ID] = &cp
+	return nil
+}
+
+func (m *memUserRepo) GetByID(_ context.Context, id uuid.UUID) (*domainU.User, error) {
+	u := m.users[id]
+	if u == nil {
+		return nil, nil
+	}
+	cp := *u
+	return &cp, nil
+}
+
+func (m *memUserRepo) GetByEmail(_ context.Context, email string) (*domainU.User, error) {
+	for _, u := range m.users {
+		if u.Email == email {
+			cp := *u
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *memUserRepo) Update(_ context.Context, u *domainU.User) error {
+	cp := *u
+	m.users[u.ID] = &cp
+	return nil
+}
+
+func (m *memUserRepo) CreateRefreshToken(_ context.Context, rt *domainU.RefreshToken) error {
+	cp := *rt
+	m.tokens[rt.TokenHash] = &cp
+	return nil
+}
+
+func (m *memUserRepo) GetRefreshTokenByHash(_ context.Context, tokenHash string) (*domainU.RefreshToken, error) {
+	rt := m.tokens[tokenHash]
+	if rt == nil {
+		return nil, nil
+	}
+	cp := *rt
+	return &cp, nil
+}
+
+func (m *memUserRepo) RevokeRefreshToken(_ context.Context, id uuid.UUID) error {
+	for _, rt := range m.tokens {
+		if rt.ID == id {
+			rt.IsRevoked = true
+		}
+	}
+	return nil
+}
+
+func (m *memUserRepo) RevokeTokenFamily(_ context.Context, familyID uuid.UUID) error {
+	for _, rt := range m.tokens {
+		if rt.FamilyID == familyID {
+			rt.IsRevoked = true
+		}
+	}
+	return nil
+}
+
+func (m *memUserRepo) RevokeAllByUserID(_ context.Context, userID uuid.UUID) error {
+	for _, rt := range m.tokens {
+		if rt.UserID == userID {
+			rt.IsRevoked = true
+		}
+	}
+	return nil
+}
+
+type noopTxManager struct{}
+
+func (m *noopTxManager) RunInTx(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func setupJWTService(t *testing.T) *jwt.Service {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	privPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	pubDER, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	require.NoError(t, err)
+	pubPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubDER})
+	svc, err := jwt.NewServiceFromPEM(string(privPEM), string(pubPEM), "fit-auth-test")
+	require.NoError(t, err)
+	return svc
+}
 
 type memMFARepo struct {
 	items map[uuid.UUID]*domainU.UserMFA
@@ -115,7 +224,7 @@ func (m *captureMailer) SendPasswordReset(_ context.Context, msg domainMailer.Pa
 
 func TestTrainerMFALoginAndReplayProtection(t *testing.T) {
 	ctx := context.Background()
-	repo := NewInMemoryUserRepo()
+	repo := newMemUserRepo()
 	mfaRepo := newMemMFARepo()
 	passSvc, _ := crypto.NewPasswordService("pepper")
 	aesKey := base64.StdEncoding.EncodeToString([]byte("12345678901234567890123456789012"))
@@ -138,17 +247,13 @@ func TestTrainerMFALoginAndReplayProtection(t *testing.T) {
 	setupOut, err := mfaUC.Setup(ctx, trainer.ID, domainU.RoleTrainer)
 	require.NoError(t, err)
 
-	// Gera código válido usando passo anterior para deixar passo atual livre ao login seguinte
 	pastStep := time.Now().UTC().Unix()/totp.PeriodSeconds - 1
-	// Decodifica secret via VerifyCode não é necessário: geramos URI/code via GenerateSecret
-	// Vamos habilitar com passo -1 para que o passo atual ainda possa ser usado no login.
 	codePrev := computeTOTPForTest(t, setupOut.Secret, pastStep)
 	require.NoError(t, mfaUC.Enable(ctx, trainer.ID, domainU.RoleTrainer, codePrev))
 
 	loginUC := auth.NewLoginUseCase(repo, passSvc, jwtSvc, 15*time.Minute, 24*time.Hour).
 		WithMFA(mfaRepo, encryptor, nil)
 
-	// Sem código TOTP deve exigir MFA
 	_, err = loginUC.Execute(ctx, auth.LoginInput{
 		Email:    trainer.Email,
 		Password: "TrainerPass!2026",
@@ -156,7 +261,6 @@ func TestTrainerMFALoginAndReplayProtection(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, auth.ErrMFARequired))
 
-	// Com código TOTP atual deve autenticar
 	curStep := time.Now().UTC().Unix() / totp.PeriodSeconds
 	codeCur := computeTOTPForTest(t, setupOut.Secret, curStep)
 	out, err := loginUC.Execute(ctx, auth.LoginInput{
@@ -167,7 +271,6 @@ func TestTrainerMFALoginAndReplayProtection(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, out.AccessToken)
 
-	// Reuso do mesmo código na mesma janela deve ser bloqueado (anti-replay)
 	_, err = loginUC.Execute(ctx, auth.LoginInput{
 		Email:    trainer.Email,
 		Password: "TrainerPass!2026",
@@ -179,7 +282,7 @@ func TestTrainerMFALoginAndReplayProtection(t *testing.T) {
 
 func TestPasswordResetSingleUseAndRevokesSessions(t *testing.T) {
 	ctx := context.Background()
-	repo := NewInMemoryUserRepo()
+	repo := newMemUserRepo()
 	resetRepo := newMemResetRepo()
 	mailer := &captureMailer{}
 	passSvc, _ := crypto.NewPasswordService("pepper")
@@ -204,13 +307,11 @@ func TestPasswordResetSingleUseAndRevokesSessions(t *testing.T) {
 	}
 	require.NoError(t, repo.CreateRefreshToken(ctx, rt))
 
-	uc := auth.NewPasswordResetUseCase(repo, resetRepo, nil, &MockTxManager{}, passSvc, mailer)
+	uc := auth.NewPasswordResetUseCase(repo, resetRepo, nil, &noopTxManager{}, passSvc, mailer)
 
-	// Anti-enumeração: email inexistente retorna nil sem enviar email
 	require.NoError(t, uc.Request(ctx, auth.PasswordResetRequestInput{Email: "naoexiste@fit.test"}))
 	assert.Empty(t, mailer.resetTokens)
 
-	// Email válido envia 1 token
 	require.NoError(t, uc.Request(ctx, auth.PasswordResetRequestInput{Email: usr.Email}))
 	require.Len(t, mailer.resetTokens, 1)
 	token := mailer.resetTokens[0]
@@ -224,11 +325,9 @@ func TestPasswordResetSingleUseAndRevokesSessions(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, passSvc.Check("NewStrongPass!2026", updated.PasswordHash))
 
-	// Refresh tokens anteriores revogados
 	revokedRT, _ := repo.GetRefreshTokenByHash(ctx, "hash-active-rt")
 	assert.True(t, revokedRT.IsRevoked)
 
-	// Reuso do mesmo token deve falhar
 	err = uc.Confirm(ctx, auth.PasswordResetConfirmInput{
 		Token:       token,
 		NewPassword: "AnotherPass!2026",

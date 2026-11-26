@@ -14,7 +14,7 @@ func TestGenerateAndVerifyTOTP(t *testing.T) {
 	assert.Len(t, secret, 32)
 
 	uri := BuildOTPAuthURI("FitBrother", "trainer@fit.test", secret)
-	assert.Contains(t, uri, "otpauth://totp/FitBrother:trainer%40fit.test?")
+	assert.Contains(t, uri, "otpauth://totp/FitBrother:trainer@fit.test?")
 	assert.Contains(t, uri, "secret="+secret)
 
 	key, err := base32NoPad.DecodeString(secret)

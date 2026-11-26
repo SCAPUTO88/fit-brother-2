@@ -19,9 +19,10 @@ func TestBuildMessageSanitizesCRLFHeaderInjection(t *testing.T) {
 	)
 
 	headerPart := strings.SplitN(msg, "\r\n\r\n", 2)[0]
-	assert.NotContains(t, headerPart, "Bcc:")
-	assert.NotContains(t, headerPart, "Cc:")
-	assert.NotContains(t, headerPart, "X-Injected:")
+	assert.NotContains(t, headerPart, "\nBcc:")
+	assert.NotContains(t, headerPart, "\nCc:")
+	assert.NotContains(t, headerPart, "\nX-Injected:")
+	assert.Len(t, strings.Split(headerPart, "\r\n"), 5)
 	assert.Contains(t, headerPart, "From: no-reply@fitbrother.testBcc: evil@attacker.test")
 }
 
