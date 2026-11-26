@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/SCAPUTO88/fit-brother/internal/domain/errs"
+	domainOrg "github.com/SCAPUTO88/fit-brother/internal/domain/organization"
 	domainS "github.com/SCAPUTO88/fit-brother/internal/domain/student"
 	"github.com/SCAPUTO88/fit-brother/internal/domain/tx"
 	domainU "github.com/SCAPUTO88/fit-brother/internal/domain/user"
@@ -19,6 +20,7 @@ import (
 type CreateStudentUseCase struct {
 	userRepo  domainU.Repository
 	studRepo  domainS.Repository
+	orgRepo   domainOrg.Repository
 	txManager tx.Manager
 	passSvc   *crypto.PasswordService
 	encryptor *crypto.AESEncryptor
@@ -43,12 +45,17 @@ func NewCreateStudentUseCase(
 	}
 }
 
+func (c *CreateStudentUseCase) WithOrganizationRepo(orgRepo domainOrg.Repository) *CreateStudentUseCase {
+	c.orgRepo = orgRepo
+	return c
+}
+
 func (c *CreateStudentUseCase) Execute(ctx context.Context, input CreateStudentInput) (*StudentOutput, error) {
 	if input.TrainerID == uuid.Nil {
 		return nil, fmt.Errorf("%w: treinador responsável obrigatório", errs.ErrForbidden)
 	}
 
-	email := strings.TrimSpace(input.Email)
+	email := strings.ToLower(strings.TrimSpace(input.Email))
 	newUserID := uuid.New()
 
 	studentDomain, err := domainS.NewStudent(newUserID, input.TrainerID, input.CPF)
@@ -56,7 +63,11 @@ func (c *CreateStudentUseCase) Execute(ctx context.Context, input CreateStudentI
 		return nil, fmt.Errorf("%w: %v", errs.ErrInvalidInput, err)
 	}
 
-	cpfHash := c.hashGen.Generate(studentDomain.GetCleanCPF())
+	cleanCPF := studentDomain.GetCleanCPF()
+	var cpfHash string
+	if cleanCPF != "" {
+		cpfHash = c.hashGen.Generate(cleanCPF)
+	}
 
 	hashedPass, err := c.passSvc.Hash(input.Password)
 	if err != nil {
@@ -79,14 +90,17 @@ func (c *CreateStudentUseCase) Execute(ctx context.Context, input CreateStudentI
 		return nil, fmt.Errorf("%w: %v", errs.ErrInvalidInput, err)
 	}
 
-	encryptedCpf, err := c.encryptor.Encrypt(studentDomain.GetCleanCPF(), []byte(studentDomain.ID.String()))
-	studentDomain.ClearSensitiveData()
-	if err != nil {
-		return nil, errors.New("falha interna encriptando CPF")
+	if cleanCPF != "" {
+		encryptedCpf, err := c.encryptor.Encrypt(cleanCPF, []byte(studentDomain.ID.String()))
+		studentDomain.ClearSensitiveData()
+		if err != nil {
+			return nil, errors.New("falha interna encriptando CPF")
+		}
+		studentDomain.CPFEncrypted = &encryptedCpf
+		studentDomain.CPFHash = &cpfHash
+	} else {
+		studentDomain.ClearSensitiveData()
 	}
-
-	studentDomain.CPFEncrypted = encryptedCpf
-	studentDomain.CPFHash = cpfHash
 
 	run := func(execCtx context.Context) error {
 		existingUsr, err := c.userRepo.GetByEmail(execCtx, email)
@@ -97,12 +111,14 @@ func (c *CreateStudentUseCase) Execute(ctx context.Context, input CreateStudentI
 			return fmt.Errorf("%w: email ou CPF já cadastrados", errs.ErrConflict)
 		}
 
-		existingStud, err := c.studRepo.GetByCPFHash(execCtx, cpfHash)
-		if err != nil {
-			return errors.New("falha ao verificar CPF cadastrado")
-		}
-		if existingStud != nil {
-			return fmt.Errorf("%w: email ou CPF já cadastrados", errs.ErrConflict)
+		if cpfHash != "" {
+			existingStud, err := c.studRepo.GetByCPFHash(execCtx, cpfHash)
+			if err != nil {
+				return errors.New("falha ao verificar CPF cadastrado")
+			}
+			if existingStud != nil {
+				return fmt.Errorf("%w: email ou CPF já cadastrados", errs.ErrConflict)
+			}
 		}
 
 		if err := c.userRepo.Create(execCtx, userDomain); err != nil {
@@ -111,6 +127,32 @@ func (c *CreateStudentUseCase) Execute(ctx context.Context, input CreateStudentI
 
 		if err := c.studRepo.Create(execCtx, studentDomain); err != nil {
 			return errors.New("falha persistindo aluno")
+		}
+
+		if c.orgRepo != nil {
+			trainerUsr, err := c.userRepo.GetByID(execCtx, input.TrainerID)
+			if err != nil {
+				return errors.New("falha ao buscar treinador responsável")
+			}
+			trainerName := "Personal"
+			if trainerUsr != nil && strings.TrimSpace(trainerUsr.FullName) != "" {
+				trainerName = trainerUsr.FullName
+			}
+			org, err := c.orgRepo.EnsureTrainerDefaultOrg(execCtx, input.TrainerID, trainerName)
+			if err != nil {
+				return errors.New("falha ao resolver organização do treinador")
+			}
+			rel := &domainOrg.TrainerStudentRelationship{
+				ID:             uuid.New(),
+				OrganizationID: org.ID,
+				TrainerUserID:  input.TrainerID,
+				StudentID:      studentDomain.ID,
+				Status:         domainOrg.RelActive,
+				StartedAt:      time.Now().UTC(),
+			}
+			if err := c.orgRepo.CreateRelationship(execCtx, rel); err != nil {
+				return errors.New("falha ao registrar vínculo treinador-aluno")
+			}
 		}
 
 		return nil

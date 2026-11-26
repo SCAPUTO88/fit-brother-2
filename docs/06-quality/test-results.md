@@ -45,3 +45,23 @@ Este arquivo registra os resultados executados ao longo das fases.
   5. **`Flutter (Analyze, Test & Web Build)` (`success`):** `flutter analyze --no-fatal-infos` (sem warnings/errors; apenas 10 `info` do SDK sobre `material.dart`), `flutter test` (`6` testes aprovados em `test/dio_client_test.dart`, `test/core/api/dio_client_test.dart` e `test/widget_test.dart`) e `flutter build web --release` (`✓ Built build/web`).
   6. **`Build (Go & Docker)` (`success`):** compilação estática de `./cmd/api` e build da imagem `docker/Dockerfile`.
 
+---
+
+## Fase 3 — Identidade, Multi-Tenancy & LGPD (`feat/fase-3-identidade-multitenancy-lgpd`, 2026-11-26)
+
+- **Ambiente de execução real:** GitHub Actions (`ubuntu-latest`) no repositório `SCAPUTO88/fit-brother-2` (PR `#3`, commit `e41c7de`, workflow run [`45735271644`](https://github.com/SCAPUTO88/fit-brother-2/actions/runs/45735271644)).
+- **Resultados verificados na esteira CI (`6/6` jobs aprovados):**
+  1. **`Lint (Go)` (`success`):** `golangci-lint` (`v1.64.8`) sem issues (`0`) e `gofmt -l .` limpo.
+  2. **`Security Scan (Go)` (`success`):** `govulncheck` (`v1.2.0`) com Go `1.26.11` sem vulnerabilidades reportadas.
+  3. **`DevSecOps (Secrets, SAST, SCA & SBOM)` (`success`):**
+     - `Gitleaks` (`8.30.1`): `no leaks found`.
+     - `Semgrep` (`1.186.0`): `0` findings em `221` arquivos (`80` regras executadas).
+     - `OSV-Scanner` (`2.7.1`): `70` pacotes Go (`go.mod`) e `118` pacotes Dart/Flutter (`fit_brother_app/pubspec.lock`) analisados sem vulnerabilidades conhecidas.
+     - `Trivy`: SBOM CycloneDX gerado e publicado como artefato `fit-brother-sbom-cdx` (`9638 bytes`); Trivy FS (`HIGH`/`CRITICAL`) limpo em `go.mod` e `fit_brother_app/pubspec.lock`.
+  4. **`Test (Go + Postgres)` (`success`):**
+     - `go test -v -race -count=1 ./internal/...` aprovado em todos os `19` pacotes testáveis (incluindo `application/{auth,invitation,organization,privacy,student,video,workout}`, `infrastructure/totp` e `adapters/mailer`).
+     - `go test -v -race -count=1 -timeout 3m -tags integration ./tests/integration/...` aprovado com PostgreSQL 16 (`52.377s` pacote): `TestSecurityBaselinePostgresIntegration` (`51.36s`), cobrindo `Fluxo_Web_Cookie_+_CSRF_e_LocalStorage_sem_Redis/R2` (`2.52s`) e `Fase_3_-_Identidade_Multi-Tenancy_Convites_MFA_Reset_e_LGPD` (`33.28s`, aplicando migrations `001`–`007` e validando criação sem CPF, organizações/membros, encerramento de vínculo, convite/revogação/aceite, reset de senha com revogação de sessões, consentimentos/exportação/auto-anonimização LGPD e fluxo completo de MFA TOTP com anti-replay).
+     - **Cobertura unitária (`go tool cover`):** `36.9%` total de statements (`domain/student` `93.8%`, `infrastructure/totp` `91.9%`, `domain/workout` `86.4%`, `infrastructure/jwt` `79.3%`, `infrastructure/crypto` `79.2%`, `adapters/http/middleware` `73.4%`, `application/video` `73.0%`, `infrastructure/config` `67.6%`, `application/privacy` `67.5%`, `application/organization` `61.4%`, `adapters/storage` `59.6%`, `application/student` `58.7%`, `application/workout` `56.7%`, `application/invitation` `55.6%`, `application/auth` `55.3%`, `adapters/mailer` `18.2%`, `adapters/http` `7.2%`, `adapters/http/handler` `6.6%`, `adapters/repository/postgres` `3.6%`).
+  5. **`Flutter (Analyze, Test & Web Build)` (`success`):** `flutter analyze --no-fatal-infos` (sem warnings/errors; apenas `14` `info`s), `flutter test` (`8` testes aprovados em `test/core/api/dio_client_test.dart`, `test/dio_client_test.dart` e `test/widget_test.dart`) e `flutter build web --release` (`✓ Built build/web`).
+  6. **`Build (Go & Docker)` (`success`):** compilação estática de `./cmd/api` e build da imagem `docker/Dockerfile`.
+

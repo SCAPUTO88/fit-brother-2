@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/SCAPUTO88/fit-brother/internal/domain/errs"
+	domainOrg "github.com/SCAPUTO88/fit-brother/internal/domain/organization"
 	domainS "github.com/SCAPUTO88/fit-brother/internal/domain/student"
 	domainU "github.com/SCAPUTO88/fit-brother/internal/domain/user"
 	domain "github.com/SCAPUTO88/fit-brother/internal/domain/workout"
@@ -17,10 +18,16 @@ import (
 type CreatePlanUseCase struct {
 	repo     domain.Repository
 	studRepo domainS.Repository
+	orgRepo  domainOrg.Repository
 }
 
 func NewCreatePlanUseCase(r domain.Repository, sr domainS.Repository) *CreatePlanUseCase {
 	return &CreatePlanUseCase{repo: r, studRepo: sr}
+}
+
+func (uc *CreatePlanUseCase) WithOrganizationRepo(orgRepo domainOrg.Repository) *CreatePlanUseCase {
+	uc.orgRepo = orgRepo
+	return uc
 }
 
 func (uc *CreatePlanUseCase) Execute(ctx context.Context, input CreatePlanInput) (*PlanOutput, error) {
@@ -40,7 +47,15 @@ func (uc *CreatePlanUseCase) Execute(ctx context.Context, input CreatePlanInput)
 	if stud == nil {
 		return nil, fmt.Errorf("%w: aluno não encontrado", errs.ErrNotFound)
 	}
-	if stud.TrainerID == nil || *stud.TrainerID != trainerID {
+	if uc.orgRepo != nil {
+		active, err := uc.orgRepo.HasActiveRelationship(ctx, trainerID, studentID)
+		if err != nil {
+			return nil, errors.New("falha ao verificar vínculo ativo com o aluno")
+		}
+		if !active {
+			return nil, fmt.Errorf("%w: este aluno não possui vínculo ativo com o treinador", errs.ErrForbidden)
+		}
+	} else if stud.TrainerID == nil || *stud.TrainerID != trainerID {
 		return nil, fmt.Errorf("%w: este aluno não pertence ao treinador autenticado", errs.ErrForbidden)
 	}
 
@@ -218,10 +233,16 @@ func toPlansOutput(plans []*domain.WorkoutPlan) []*PlanOutput {
 type GetPlanDetailsUseCase struct {
 	repo     domain.Repository
 	studRepo domainS.Repository
+	orgRepo  domainOrg.Repository
 }
 
 func NewGetPlanDetailsUseCase(r domain.Repository, sr domainS.Repository) *GetPlanDetailsUseCase {
 	return &GetPlanDetailsUseCase{repo: r, studRepo: sr}
+}
+
+func (uc *GetPlanDetailsUseCase) WithOrganizationRepo(orgRepo domainOrg.Repository) *GetPlanDetailsUseCase {
+	uc.orgRepo = orgRepo
+	return uc
 }
 
 func (uc *GetPlanDetailsUseCase) Execute(ctx context.Context, planIDStr string, tokenUserID uuid.UUID, role string) (*PlanDetailsOutput, error) {
@@ -248,7 +269,15 @@ func (uc *GetPlanDetailsUseCase) Execute(ctx context.Context, planIDStr string, 
 			return nil, fmt.Errorf("%w: acesso negado", errs.ErrForbidden)
 		}
 	case domainU.RoleTrainer:
-		if plan.TrainerID != tokenUserID {
+		if uc.orgRepo != nil {
+			active, err := uc.orgRepo.HasActiveRelationship(ctx, tokenUserID, plan.StudentID)
+			if err != nil {
+				return nil, errors.New("falha ao verificar vínculo ativo com o aluno")
+			}
+			if !active {
+				return nil, fmt.Errorf("%w: acesso negado", errs.ErrForbidden)
+			}
+		} else if plan.TrainerID != tokenUserID {
 			return nil, fmt.Errorf("%w: acesso negado", errs.ErrForbidden)
 		}
 	default:

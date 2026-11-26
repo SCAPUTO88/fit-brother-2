@@ -56,8 +56,12 @@ func CSRFProtection(allowedOrigins []string) gin.HandlerFunc {
 			}
 		}
 
-		// Login não usa cookie prévio para autenticação; permite reautenticação se restar cookie expirado.
-		if strings.HasSuffix(c.Request.URL.Path, "/auth/login") {
+		// Rotas públicas de autenticação/recuperação não dependem de cookie prévio de sessão.
+		path := c.Request.URL.Path
+		if strings.HasSuffix(path, "/auth/login") ||
+			strings.HasSuffix(path, "/auth/invitations/accept") ||
+			strings.HasSuffix(path, "/auth/password-reset/request") ||
+			strings.HasSuffix(path, "/auth/password-reset/confirm") {
 			c.Next()
 			return
 		}

@@ -13,21 +13,27 @@ import (
 
 	"github.com/SCAPUTO88/fit-brother/internal/adapters/http/handler"
 	"github.com/SCAPUTO88/fit-brother/internal/adapters/http/middleware"
+	"github.com/SCAPUTO88/fit-brother/internal/adapters/mailer"
 	"github.com/SCAPUTO88/fit-brother/internal/adapters/repository/postgres"
 	"github.com/SCAPUTO88/fit-brother/internal/adapters/storage"
 	"github.com/SCAPUTO88/fit-brother/internal/application/auth"
+	appInv "github.com/SCAPUTO88/fit-brother/internal/application/invitation"
+	appOrg "github.com/SCAPUTO88/fit-brother/internal/application/organization"
+	appPrivacy "github.com/SCAPUTO88/fit-brother/internal/application/privacy"
 	"github.com/SCAPUTO88/fit-brother/internal/application/student"
 	appvideo "github.com/SCAPUTO88/fit-brother/internal/application/video"
 	appworkout "github.com/SCAPUTO88/fit-brother/internal/application/workout"
+	domainMailer "github.com/SCAPUTO88/fit-brother/internal/domain/mailer"
 	domainStorage "github.com/SCAPUTO88/fit-brother/internal/domain/storage"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/config"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/crypto"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/jwt"
 )
 
-// RouterDeps permite substituir adapters externos (ex.: storage) em testes de integração.
+// RouterDeps permite substituir adapters externos (ex.: storage e mailer) em testes de integração.
 type RouterDeps struct {
 	VideoStorage domainStorage.Port
+	Mailer       domainMailer.Port
 }
 
 func SetupRouter(cfg *config.Config, db *sqlx.DB) (*gin.Engine, error) {
@@ -75,10 +81,18 @@ func SetupRouterWithDeps(cfg *config.Config, db *sqlx.DB, deps RouterDeps) (*gin
 	studentRepo := postgres.NewStudentRepository(db)
 	workoutRepo := postgres.NewWorkoutRepository(db)
 	videoRepo := postgres.NewVideoRepository(db)
+	orgRepo := postgres.NewOrganizationRepository(db)
+	invRepo := postgres.NewInvitationRepository(db)
+	privacyRepo := postgres.NewPrivacyRepository(db)
 
 	videoStorage, localStore, err := resolveVideoStorage(cfg, deps)
 	if err != nil {
 		return nil, fmt.Errorf("falha configurando storage: %w", err)
+	}
+
+	mailAdapter, err := resolveMailer(cfg, deps)
+	if err != nil {
+		return nil, fmt.Errorf("falha configurando mailer: %w", err)
 	}
 
 	signedURLTTL := cfg.Storage.SignedURLTTL
@@ -89,32 +103,53 @@ func SetupRouterWithDeps(cfg *config.Config, db *sqlx.DB, deps RouterDeps) (*gin
 		signedURLTTL = 5 * time.Minute
 	}
 
-	loginUC := auth.NewLoginUseCase(userRepo, passwordSvc, jwtSvc, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
+	loginUC := auth.NewLoginUseCase(userRepo, passwordSvc, jwtSvc, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL).
+		WithMFA(userRepo, aesEncryptor, privacyRepo)
 	refreshUC := auth.NewRefreshUseCase(userRepo, txManager, jwtSvc, cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL)
 	logoutUC := auth.NewLogoutUseCase(userRepo)
+	resetUC := auth.NewPasswordResetUseCase(userRepo, userRepo, privacyRepo, txManager, passwordSvc, mailAdapter)
+	mfaUC := auth.NewMFAUseCase(userRepo, userRepo, privacyRepo, passwordSvc, aesEncryptor)
 
-	createStudentUC := student.NewCreateStudentUseCase(userRepo, studentRepo, txManager, passwordSvc, aesEncryptor, hashGen)
-	getStudentUC := student.NewGetStudentUseCase(userRepo, studentRepo, aesEncryptor)
+	createStudentUC := student.NewCreateStudentUseCase(userRepo, studentRepo, txManager, passwordSvc, aesEncryptor, hashGen).
+		WithOrganizationRepo(orgRepo)
+	getStudentUC := student.NewGetStudentUseCase(userRepo, studentRepo, aesEncryptor).
+		WithOrganizationRepo(orgRepo)
 	listStudentsUC := student.NewListStudentsUseCase(studentRepo)
-	anonymizeStudentUC := student.NewAnonymizeStudentUseCase(userRepo, studentRepo, txManager)
+	anonymizeStudentUC := student.NewAnonymizeStudentUseCase(userRepo, studentRepo, txManager).
+		WithMultiTenantAndPrivacy(orgRepo, privacyRepo)
 
-	createPlanUC := appworkout.NewCreatePlanUseCase(workoutRepo, studentRepo)
+	createPlanUC := appworkout.NewCreatePlanUseCase(workoutRepo, studentRepo).
+		WithOrganizationRepo(orgRepo)
 	createSessionUC := appworkout.NewCreateSessionUseCase(workoutRepo)
 	createExerciseUC := appworkout.NewCreateExerciseUseCase(workoutRepo)
 	listPlansUC := appworkout.NewListPlansUseCase(workoutRepo, studentRepo)
-	getPlanDetailsUC := appworkout.NewGetPlanDetailsUseCase(workoutRepo, studentRepo)
+	getPlanDetailsUC := appworkout.NewGetPlanDetailsUseCase(workoutRepo, studentRepo).
+		WithOrganizationRepo(orgRepo)
 
 	requestUploadURLUC := appvideo.NewRequestUploadURLUseCase(videoRepo, workoutRepo, videoStorage, signedURLTTL)
 	confirmUploadUC := appvideo.NewConfirmUploadUseCase(videoRepo, workoutRepo, videoStorage)
 	getSignedURLUC := appvideo.NewGetSignedURLUseCase(videoRepo, workoutRepo, studentRepo, videoStorage, signedURLTTL)
 
-	authHandler := handler.NewAuthHandler(loginUC, refreshUC, logoutUC, cfg.App.IsProduction(), cfg.JWT.RefreshTokenTTL)
+	orgUC := appOrg.NewUseCase(orgRepo, userRepo, privacyRepo, txManager)
+	invUC := appInv.NewUseCase(
+		invRepo, orgRepo, userRepo, studentRepo, privacyRepo,
+		txManager, passwordSvc, jwtSvc, mailAdapter,
+		cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL,
+	)
+	privacyUC := appPrivacy.NewUseCase(privacyRepo, userRepo, userRepo, studentRepo, orgRepo, workoutRepo, txManager)
+
+	authHandler := handler.NewAuthHandler(loginUC, refreshUC, logoutUC, cfg.App.IsProduction(), cfg.JWT.RefreshTokenTTL).
+		WithPhase3(resetUC, mfaUC)
 	studentHandler := handler.NewStudentHandler(createStudentUC, getStudentUC, listStudentsUC, anonymizeStudentUC)
 	workoutHandler := handler.NewWorkoutHandler(createPlanUC, createSessionUC, createExerciseUC, listPlansUC, getPlanDetailsUC)
 	videoHandler := handler.NewVideoHandler(requestUploadURLUC, confirmUploadUC, getSignedURLUC)
+	orgHandler := handler.NewOrganizationHandler(orgUC)
+	invHandler := handler.NewInvitationHandler(invUC, cfg.App.IsProduction(), cfg.JWT.RefreshTokenTTL)
+	privacyHandler := handler.NewPrivacyHandler(privacyUC, cfg.App.IsProduction())
 
 	authLimiter := middleware.NewRateLimiter(cfg.RateLimit.AuthMaxRequests, cfg.RateLimit.AuthWindow, 5*time.Minute)
 	authMiddleware := middleware.RequireAuth(jwtSvc, userRepo)
+	authRateMiddleware := authLimiter.Middleware("auth")
 
 	v1 := router.Group("/v1")
 	{
@@ -126,10 +161,14 @@ func SetupRouterWithDeps(cfg *config.Config, db *sqlx.DB, deps RouterDeps) (*gin
 			})
 		})
 
-		authHandler.RegisterRoutes(v1, authLimiter.Middleware("auth"))
+		authHandler.RegisterRoutes(v1, authRateMiddleware)
+		authHandler.RegisterProtectedRoutes(v1, authMiddleware)
 		studentHandler.RegisterRoutes(v1, authMiddleware)
 		workoutHandler.RegisterRoutes(v1, authMiddleware)
 		videoHandler.RegisterRoutes(v1, authMiddleware)
+		orgHandler.RegisterRoutes(v1, authMiddleware)
+		invHandler.RegisterRoutes(v1, authRateMiddleware, authMiddleware)
+		privacyHandler.RegisterRoutes(v1, authMiddleware)
 
 		if localStore != nil {
 			localStorageHandler := handler.NewLocalStorageHandler(localStore)
@@ -138,6 +177,16 @@ func SetupRouterWithDeps(cfg *config.Config, db *sqlx.DB, deps RouterDeps) (*gin
 	}
 
 	return router, nil
+}
+
+func resolveMailer(cfg *config.Config, deps RouterDeps) (domainMailer.Port, error) {
+	if deps.Mailer != nil {
+		return deps.Mailer, nil
+	}
+	if cfg.SMTP.Enabled() {
+		return mailer.NewSMTPMailer(cfg.SMTP, cfg.App.FrontendURL)
+	}
+	return mailer.NewNoopMailer(), nil
 }
 
 func resolveVideoStorage(cfg *config.Config, deps RouterDeps) (domainStorage.Port, *storage.LocalStorage, error) {

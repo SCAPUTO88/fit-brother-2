@@ -26,12 +26,14 @@ type Config struct {
 	R2        R2Config
 	CORS      CORSConfig
 	RateLimit RateLimitConfig
+	SMTP      SMTPConfig
 }
 
 type AppConfig struct {
-	Env     string
-	Port    string
-	BaseURL string
+	Env         string
+	Port        string
+	BaseURL     string
+	FrontendURL string
 }
 
 type DatabaseConfig struct {
@@ -82,6 +84,19 @@ type RateLimitConfig struct {
 	AuthWindow      time.Duration
 }
 
+type SMTPConfig struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+	From     string
+	StartTLS bool
+}
+
+func (c SMTPConfig) Enabled() bool {
+	return strings.TrimSpace(c.Host) != ""
+}
+
 func Load() (*Config, error) {
 	_ = godotenv.Load()
 
@@ -121,9 +136,10 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		App: AppConfig{
-			Env:     appEnv,
-			Port:    resolveAppPort(),
-			BaseURL: getEnv("APP_BASE_URL", "http://localhost:8080"),
+			Env:         appEnv,
+			Port:        resolveAppPort(),
+			BaseURL:     getEnv("APP_BASE_URL", "http://localhost:8080"),
+			FrontendURL: getEnv("APP_FRONTEND_URL", "http://localhost:5173"),
 		},
 		Database: DatabaseConfig{
 			URL: databaseURL,
@@ -157,6 +173,14 @@ func Load() (*Config, error) {
 		RateLimit: RateLimitConfig{
 			AuthMaxRequests: parsePositiveInt("AUTH_RATE_LIMIT_MAX", 20),
 			AuthWindow:      parseDuration("AUTH_RATE_LIMIT_WINDOW", time.Minute),
+		},
+		SMTP: SMTPConfig{
+			Host:     getEnv("SMTP_HOST", ""),
+			Port:     parsePositiveInt("SMTP_PORT", 587),
+			Username: getEnv("SMTP_USER", ""),
+			Password: getEnv("SMTP_PASS", ""),
+			From:     getEnv("SMTP_FROM", "no-reply@fitbrother.local"),
+			StartTLS: parseBool("SMTP_STARTTLS", true),
 		},
 	}
 
@@ -246,4 +270,16 @@ func parseDuration(key string, defaultVal time.Duration) time.Duration {
 		return time.Duration(mins) * time.Minute
 	}
 	return defaultVal
+}
+
+func parseBool(key string, defaultVal bool) bool {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return defaultVal
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return defaultVal
+	}
+	return b
 }

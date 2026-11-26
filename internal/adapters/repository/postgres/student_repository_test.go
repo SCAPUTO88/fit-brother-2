@@ -26,12 +26,14 @@ func TestStudentRepository_Create(t *testing.T) {
 
 	t.Run("Deve executar o INSERT de Student com trainer_id e parametros isolados", func(t *testing.T) {
 		trainerID := uuid.New()
+		cpfEnc := "AES-RESULT-123"
+		cpfHash := "HASH_RESULT"
 		std := &student.Student{
 			ID:           uuid.New(),
 			UserID:       uuid.New(),
 			TrainerID:    &trainerID,
-			CPFEncrypted: "AES-RESULT-123",
-			CPFHash:      "HASH_RESULT",
+			CPFEncrypted: &cpfEnc,
+			CPFHash:      &cpfHash,
 			CreatedAt:    time.Now(),
 		}
 
@@ -51,7 +53,7 @@ func TestStudentRepository_Create(t *testing.T) {
 		rows := sqlmock.NewRows([]string{"id", "full_name", "email"}).
 			AddRow(uuid.New().String(), "Aluno Um", "aluno1@fit.com")
 
-		mock.ExpectQuery(`SELECT s\.id, u\.full_name, u\.email FROM students s INNER JOIN users u ON s\.user_id = u\.id WHERE s\.trainer_id = \$1 AND u\.deleted_at IS NULL AND u\.is_active = true ORDER BY u\.full_name ASC`).
+		mock.ExpectQuery(`SELECT DISTINCT s\.id, u\.full_name, u\.email FROM students s INNER JOIN users u ON s\.user_id = u\.id WHERE u\.deleted_at IS NULL AND u\.is_active = true`).
 			WithArgs(trainerID).
 			WillReturnRows(rows)
 

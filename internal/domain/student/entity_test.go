@@ -38,6 +38,17 @@ func TestStudentEntity(t *testing.T) {
 		assert.Equal(t, "12345678901", std.GetCleanCPF())
 	})
 
+	t.Run("Deve permitir criar Student sem CPF (ADR-006)", func(t *testing.T) {
+		userID := uuid.New()
+		trainerID := uuid.New()
+
+		std, err := student.NewStudent(userID, trainerID, "")
+		require.NoError(t, err)
+		assert.Equal(t, "", std.GetCleanCPF())
+		assert.Nil(t, std.CPFEncrypted)
+		assert.Nil(t, std.CPFHash)
+	})
+
 	t.Run("Deve falhar ao tentar criar aluno com CPF inválido/curto", func(t *testing.T) {
 		userID := uuid.New()
 		trainerID := uuid.New()

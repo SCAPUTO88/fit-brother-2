@@ -8,7 +8,7 @@ type CreateStudentInput struct {
 	Email     string    `json:"email" binding:"required,email"`
 	FullName  string    `json:"full_name" binding:"required,min=3"`
 	Password  string    `json:"password" binding:"required,min=6"`
-	CPF       string    `json:"cpf" binding:"required"`
+	CPF       string    `json:"cpf" binding:"omitempty"`
 }
 
 // StudentOutput representa a saida padrao segura (sem dados sensíveis)
@@ -25,6 +25,6 @@ type StudentDetailOutput struct {
 	UserID    string `json:"user_id"`
 	Email     string `json:"email"`
 	FullName  string `json:"full_name"`
-	CPF       string `json:"cpf"`
+	CPF       string `json:"cpf,omitempty"`
 	CreatedAt string `json:"created_at"`
 }
