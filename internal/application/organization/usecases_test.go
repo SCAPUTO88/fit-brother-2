@@ -208,13 +208,21 @@ func (m *memUserRepo) Update(_ context.Context, u *domainU.User) error {
 	m.users[u.ID] = &cp
 	return nil
 }
-func (m *memUserRepo) CreateRefreshToken(_ context.Context, _ *domainU.RefreshToken) error { return nil }
+func (m *memUserRepo) CreateRefreshToken(_ context.Context, _ *domainU.RefreshToken) error {
+	return nil
+}
 func (m *memUserRepo) GetRefreshTokenByHash(_ context.Context, _ string) (*domainU.RefreshToken, error) {
 	return nil, nil
 }
-func (m *memUserRepo) RevokeRefreshToken(_ context.Context, _ uuid.UUID) error { return nil }
-func (m *memUserRepo) RevokeTokenFamily(_ context.Context, _ uuid.UUID) error { return nil }
-func (m *memUserRepo) RevokeAllByUserID(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *memUserRepo) RevokeRefreshToken(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+func (m *memUserRepo) RevokeTokenFamily(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+func (m *memUserRepo) RevokeAllByUserID(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
 
 type memPrivacyAudit struct {
 	events []*domainPrivacy.AuditEvent

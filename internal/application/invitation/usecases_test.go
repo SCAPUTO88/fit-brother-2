@@ -116,7 +116,9 @@ func (m *memOrgRepo) ListOrganizationsByUser(_ context.Context, _ uuid.UUID) ([]
 func (m *memOrgRepo) GetMembership(_ context.Context, _, _ uuid.UUID) (*domainOrg.Membership, error) {
 	return nil, nil
 }
-func (m *memOrgRepo) AddMember(_ context.Context, _ *domainOrg.Membership) error { return nil }
+func (m *memOrgRepo) AddMember(_ context.Context, _ *domainOrg.Membership) error {
+	return nil
+}
 func (m *memOrgRepo) ListMembers(_ context.Context, _ uuid.UUID) ([]*domainOrg.MemberSummary, error) {
 	return nil, nil
 }
@@ -143,7 +145,9 @@ func (m *memOrgRepo) HasActiveRelationship(_ context.Context, _, _ uuid.UUID) (b
 func (m *memOrgRepo) UpdateRelationshipStatus(_ context.Context, _, _, _ uuid.UUID, _ string) error {
 	return nil
 }
-func (m *memOrgRepo) EndAllByStudent(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *memOrgRepo) EndAllByStudent(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
 
 type memUserRepo struct {
 	users map[uuid.UUID]*domainU.User
@@ -169,13 +173,21 @@ func (m *memUserRepo) Update(_ context.Context, u *domainU.User) error {
 	m.users[u.ID] = u
 	return nil
 }
-func (m *memUserRepo) CreateRefreshToken(_ context.Context, _ *domainU.RefreshToken) error { return nil }
+func (m *memUserRepo) CreateRefreshToken(_ context.Context, _ *domainU.RefreshToken) error {
+	return nil
+}
 func (m *memUserRepo) GetRefreshTokenByHash(_ context.Context, _ string) (*domainU.RefreshToken, error) {
 	return nil, nil
 }
-func (m *memUserRepo) RevokeRefreshToken(_ context.Context, _ uuid.UUID) error { return nil }
-func (m *memUserRepo) RevokeTokenFamily(_ context.Context, _ uuid.UUID) error { return nil }
-func (m *memUserRepo) RevokeAllByUserID(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *memUserRepo) RevokeRefreshToken(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+func (m *memUserRepo) RevokeTokenFamily(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+func (m *memUserRepo) RevokeAllByUserID(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
 
 type memStudRepo struct {
 	studs map[uuid.UUID]*domainS.Student
@@ -206,7 +218,9 @@ func (m *memStudRepo) Delete(_ context.Context, id uuid.UUID) error {
 	delete(m.studs, id)
 	return nil
 }
-func (m *memStudRepo) SaveBiometric(_ context.Context, _ *domainS.BiometricData) error { return nil }
+func (m *memStudRepo) SaveBiometric(_ context.Context, _ *domainS.BiometricData) error {
+	return nil
+}
 
 type memPrivacyRepo struct {
 	consents []*domainPrivacy.ConsentRecord

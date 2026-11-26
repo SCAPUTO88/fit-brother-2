@@ -80,20 +80,32 @@ type memUserRepo struct {
 	revoked map[uuid.UUID]bool
 }
 
-func (m *memUserRepo) Create(_ context.Context, u *domainU.User) error { m.users[u.ID] = u; return nil }
+func (m *memUserRepo) Create(_ context.Context, u *domainU.User) error {
+	m.users[u.ID] = u
+	return nil
+}
 func (m *memUserRepo) GetByID(_ context.Context, id uuid.UUID) (*domainU.User, error) {
 	return m.users[id], nil
 }
-func (m *memUserRepo) GetByEmail(_ context.Context, _ string) (*domainU.User, error) { return nil, nil }
-func (m *memUserRepo) Update(_ context.Context, u *domainU.User) error { m.users[u.ID] = u; return nil }
+func (m *memUserRepo) GetByEmail(_ context.Context, _ string) (*domainU.User, error) {
+	return nil, nil
+}
+func (m *memUserRepo) Update(_ context.Context, u *domainU.User) error {
+	m.users[u.ID] = u
+	return nil
+}
 func (m *memUserRepo) CreateRefreshToken(_ context.Context, _ *domainU.RefreshToken) error {
 	return nil
 }
 func (m *memUserRepo) GetRefreshTokenByHash(_ context.Context, _ string) (*domainU.RefreshToken, error) {
 	return nil, nil
 }
-func (m *memUserRepo) RevokeRefreshToken(_ context.Context, _ uuid.UUID) error { return nil }
-func (m *memUserRepo) RevokeTokenFamily(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *memUserRepo) RevokeRefreshToken(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+func (m *memUserRepo) RevokeTokenFamily(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
 func (m *memUserRepo) RevokeAllByUserID(_ context.Context, id uuid.UUID) error {
 	m.revoked[id] = true
 	return nil
@@ -103,7 +115,10 @@ type memStudRepo struct {
 	studs map[uuid.UUID]*domainS.Student
 }
 
-func (m *memStudRepo) Create(_ context.Context, s *domainS.Student) error { m.studs[s.ID] = s; return nil }
+func (m *memStudRepo) Create(_ context.Context, s *domainS.Student) error {
+	m.studs[s.ID] = s
+	return nil
+}
 func (m *memStudRepo) GetByID(_ context.Context, id uuid.UUID) (*domainS.Student, error) {
 	return m.studs[id], nil
 }
@@ -121,8 +136,13 @@ func (m *memStudRepo) GetByCPFHash(_ context.Context, _ string) (*domainS.Studen
 func (m *memStudRepo) ListByTrainer(_ context.Context, _ uuid.UUID) ([]*domainS.StudentBaseInfo, error) {
 	return nil, nil
 }
-func (m *memStudRepo) Delete(_ context.Context, id uuid.UUID) error { delete(m.studs, id); return nil }
-func (m *memStudRepo) SaveBiometric(_ context.Context, _ *domainS.BiometricData) error { return nil }
+func (m *memStudRepo) Delete(_ context.Context, id uuid.UUID) error {
+	delete(m.studs, id)
+	return nil
+}
+func (m *memStudRepo) SaveBiometric(_ context.Context, _ *domainS.BiometricData) error {
+	return nil
+}
 
 type memOrgRepo struct {
 	ended bool
@@ -140,7 +160,9 @@ func (m *memOrgRepo) ListOrganizationsByUser(_ context.Context, _ uuid.UUID) ([]
 func (m *memOrgRepo) GetMembership(_ context.Context, _, _ uuid.UUID) (*domainOrg.Membership, error) {
 	return nil, nil
 }
-func (m *memOrgRepo) AddMember(_ context.Context, _ *domainOrg.Membership) error { return nil }
+func (m *memOrgRepo) AddMember(_ context.Context, _ *domainOrg.Membership) error {
+	return nil
+}
 func (m *memOrgRepo) ListMembers(_ context.Context, _ uuid.UUID) ([]*domainOrg.MemberSummary, error) {
 	return nil, nil
 }
@@ -156,13 +178,18 @@ func (m *memOrgRepo) HasActiveRelationship(_ context.Context, _, _ uuid.UUID) (b
 func (m *memOrgRepo) UpdateRelationshipStatus(_ context.Context, _, _, _ uuid.UUID, _ string) error {
 	return nil
 }
-func (m *memOrgRepo) EndAllByStudent(_ context.Context, _ uuid.UUID) error { m.ended = true; return nil }
+func (m *memOrgRepo) EndAllByStudent(_ context.Context, _ uuid.UUID) error {
+	m.ended = true
+	return nil
+}
 
 type memWorkoutRepo struct {
 	plans []*domainW.WorkoutPlan
 }
 
-func (m *memWorkoutRepo) CreatePlan(_ context.Context, _ *domainW.WorkoutPlan) error { return nil }
+func (m *memWorkoutRepo) CreatePlan(_ context.Context, _ *domainW.WorkoutPlan) error {
+	return nil
+}
 func (m *memWorkoutRepo) GetPlanByID(_ context.Context, _ uuid.UUID) (*domainW.WorkoutPlan, error) {
 	return nil, nil
 }
@@ -172,7 +199,9 @@ func (m *memWorkoutRepo) ListPlansByStudent(_ context.Context, _ uuid.UUID) ([]*
 func (m *memWorkoutRepo) ListPlansByTrainer(_ context.Context, _ uuid.UUID) ([]*domainW.WorkoutPlan, error) {
 	return nil, nil
 }
-func (m *memWorkoutRepo) UpdatePlan(_ context.Context, _ *domainW.WorkoutPlan) error { return nil }
+func (m *memWorkoutRepo) UpdatePlan(_ context.Context, _ *domainW.WorkoutPlan) error {
+	return nil
+}
 func (m *memWorkoutRepo) CreateSession(_ context.Context, _ *domainW.WorkoutSession) error {
 	return nil
 }
@@ -182,14 +211,18 @@ func (m *memWorkoutRepo) GetSessionByID(_ context.Context, _ uuid.UUID) (*domain
 func (m *memWorkoutRepo) ListSessionsByPlan(_ context.Context, _ uuid.UUID) ([]*domainW.WorkoutSession, error) {
 	return nil, nil
 }
-func (m *memWorkoutRepo) CreateExercise(_ context.Context, _ *domainW.Exercise) error { return nil }
+func (m *memWorkoutRepo) CreateExercise(_ context.Context, _ *domainW.Exercise) error {
+	return nil
+}
 func (m *memWorkoutRepo) GetExerciseByID(_ context.Context, _ uuid.UUID) (*domainW.Exercise, error) {
 	return nil, nil
 }
 func (m *memWorkoutRepo) ListExercisesBySession(_ context.Context, _ uuid.UUID) ([]*domainW.Exercise, error) {
 	return nil, nil
 }
-func (m *memWorkoutRepo) DeleteExercise(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *memWorkoutRepo) DeleteExercise(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
 
 func TestPrivacyExportAndSelfAnonymize(t *testing.T) {
 	ctx := context.Background()
