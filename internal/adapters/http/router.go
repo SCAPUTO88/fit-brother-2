@@ -17,6 +17,7 @@ import (
 	"github.com/SCAPUTO88/fit-brother/internal/adapters/repository/postgres"
 	"github.com/SCAPUTO88/fit-brother/internal/adapters/storage"
 	"github.com/SCAPUTO88/fit-brother/internal/application/auth"
+	appCatalog "github.com/SCAPUTO88/fit-brother/internal/application/catalog"
 	appInv "github.com/SCAPUTO88/fit-brother/internal/application/invitation"
 	appOrg "github.com/SCAPUTO88/fit-brother/internal/application/organization"
 	appPrivacy "github.com/SCAPUTO88/fit-brother/internal/application/privacy"
@@ -84,6 +85,7 @@ func SetupRouterWithDeps(cfg *config.Config, db *sqlx.DB, deps RouterDeps) (*gin
 	orgRepo := postgres.NewOrganizationRepository(db)
 	invRepo := postgres.NewInvitationRepository(db)
 	privacyRepo := postgres.NewPrivacyRepository(db)
+	catalogRepo := postgres.NewCatalogRepository(db)
 
 	videoStorage, localStore, err := resolveVideoStorage(cfg, deps)
 	if err != nil {
@@ -137,6 +139,7 @@ func SetupRouterWithDeps(cfg *config.Config, db *sqlx.DB, deps RouterDeps) (*gin
 		cfg.JWT.AccessTokenTTL, cfg.JWT.RefreshTokenTTL,
 	)
 	privacyUC := appPrivacy.NewUseCase(privacyRepo, userRepo, userRepo, studentRepo, orgRepo, workoutRepo, txManager)
+	catalogUC := appCatalog.NewUseCase(catalogRepo, orgRepo, userRepo, privacyRepo, videoStorage, signedURLTTL)
 
 	authHandler := handler.NewAuthHandler(loginUC, refreshUC, logoutUC, cfg.App.IsProduction(), cfg.JWT.RefreshTokenTTL).
 		WithPhase3(resetUC, mfaUC)
@@ -146,6 +149,7 @@ func SetupRouterWithDeps(cfg *config.Config, db *sqlx.DB, deps RouterDeps) (*gin
 	orgHandler := handler.NewOrganizationHandler(orgUC)
 	invHandler := handler.NewInvitationHandler(invUC, cfg.App.IsProduction(), cfg.JWT.RefreshTokenTTL)
 	privacyHandler := handler.NewPrivacyHandler(privacyUC, cfg.App.IsProduction())
+	catalogHandler := handler.NewCatalogHandler(catalogUC)
 
 	authLimiter := middleware.NewRateLimiter(cfg.RateLimit.AuthMaxRequests, cfg.RateLimit.AuthWindow, 5*time.Minute)
 	authMiddleware := middleware.RequireAuth(jwtSvc, userRepo)
@@ -169,6 +173,7 @@ func SetupRouterWithDeps(cfg *config.Config, db *sqlx.DB, deps RouterDeps) (*gin
 		orgHandler.RegisterRoutes(v1, authMiddleware)
 		invHandler.RegisterRoutes(v1, authRateMiddleware, authMiddleware)
 		privacyHandler.RegisterRoutes(v1, authMiddleware)
+		catalogHandler.RegisterRoutes(v1, authMiddleware)
 
 		if localStore != nil {
 			localStorageHandler := handler.NewLocalStorageHandler(localStore)

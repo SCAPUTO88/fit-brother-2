@@ -7,6 +7,9 @@ import '../../features/auth/invite_accept_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/mfa_settings_screen.dart';
 import '../../features/auth/password_reset_screen.dart';
+import '../../features/catalog/create_catalog_exercise_screen.dart';
+import '../../features/catalog/exercise_catalog_screen.dart';
+import '../../features/catalog/exercise_detail_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/privacy/privacy_center_screen.dart';
 import '../../features/students/create_student_screen.dart';
@@ -74,6 +77,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/students/create',
         builder: (context, state) => const CreateStudentScreen(),
+      ),
+      GoRoute(
+        path: '/catalog',
+        builder: (context, state) => const ExerciseCatalogScreen(),
+      ),
+      GoRoute(
+        path: '/catalog/create',
+        builder: (context, state) => const CreateCatalogExerciseScreen(),
+      ),
+      GoRoute(
+        path: '/catalog/:id',
+        builder: (context, state) => ExerciseDetailScreen(
+          exerciseId: state.pathParameters['id']!,
+        ),
       ),
       GoRoute(
         path: '/workouts',

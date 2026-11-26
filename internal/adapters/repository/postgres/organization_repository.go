@@ -249,3 +249,26 @@ func (r *OrganizationRepository) EndAllByStudent(ctx context.Context, studentID 
 	_, err := getExecutor(ctx, r.db).ExecContext(ctx, query, studentID)
 	return err
 }
+
+func (r *OrganizationRepository) ListActiveOrgIDsForUser(ctx context.Context, userID uuid.UUID, role string) ([]uuid.UUID, error) {
+	var query string
+	if role == "STUDENT" {
+		query = `
+			SELECT DISTINCT r.organization_id
+			FROM trainer_student_relationships r
+			INNER JOIN students s ON s.id = r.student_id
+			WHERE s.user_id = $1 AND r.status = 'ACTIVE'
+		`
+	} else {
+		query = `
+			SELECT organization_id
+			FROM memberships
+			WHERE user_id = $1 AND status = 'ACTIVE'
+		`
+	}
+	var ids []uuid.UUID
+	if err := getExecutor(ctx, r.db).SelectContext(ctx, &ids, query, userID); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}

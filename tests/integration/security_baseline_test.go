@@ -30,6 +30,8 @@ import (
 
 	apphttp "github.com/SCAPUTO88/fit-brother/internal/adapters/http"
 	"github.com/SCAPUTO88/fit-brother/internal/adapters/http/middleware"
+	"github.com/SCAPUTO88/fit-brother/internal/adapters/repository/postgres"
+	appCatalog "github.com/SCAPUTO88/fit-brother/internal/application/catalog"
 	domainMailer "github.com/SCAPUTO88/fit-brother/internal/domain/mailer"
 	domainStorage "github.com/SCAPUTO88/fit-brother/internal/domain/storage"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/config"
@@ -123,6 +125,7 @@ func applyMigrations(t *testing.T, db *sqlx.DB) {
 	t.Helper()
 	_, err := db.Exec(`
 		DROP TABLE IF EXISTS
+			exercise_media, exercise_catalog, equipments, muscle_groups,
 			audit_events, privacy_requests, consent_records, user_mfa,
 			password_reset_tokens, invitations, trainer_student_relationships,
 			memberships, organizations,
@@ -242,6 +245,10 @@ func TestSecurityBaselinePostgresIntegration(t *testing.T) {
 			SignedURLTTL: 5 * time.Minute,
 		},
 		CORS: config.CORSConfig{AllowedOrigins: "http://localhost:3000"},
+		RateLimit: config.RateLimitConfig{
+			AuthMaxRequests: 100,
+			AuthWindow:      time.Minute,
+		},
 	}
 
 	fakeStorage := newIntegrationVideoStorage()
@@ -771,5 +778,177 @@ func TestSecurityBaselinePostgresIntegration(t *testing.T) {
 		wMFAStatus := doJSONRequest(t, router, http.MethodGet, "/v1/auth/mfa/status", trainerCToken, nil)
 		require.Equal(t, http.StatusOK, wMFAStatus.Code)
 		assert.Contains(t, wMFAStatus.Body.String(), `"enabled":false`)
+	})
+
+	// 11. Fase 4 — Biblioteca de Exercícios (Catálogo PT-BR, Importador Idempotente, Custom CRUD e Mídia Segura)
+	t.Run("Fase 4 - Biblioteca de Exercicios Catalogo PT-BR Importador Idempotente e Midia Segura", func(t *testing.T) {
+		// 11.1 Filtros iniciais e exercícios globais PT-BR vindos da migration 008
+		wFilters := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/filters", trainerAToken, nil)
+		require.Equal(t, http.StatusOK, wFilters.Code, wFilters.Body.String())
+		assert.Contains(t, wFilters.Body.String(), "Peitoral")
+		assert.Contains(t, wFilters.Body.String(), "Halteres")
+
+		wSearchGlobal := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/exercises?q=Supino+Reto&muscle=chest&equipment=barbell", trainerAToken, nil)
+		require.Equal(t, http.StatusOK, wSearchGlobal.Code, wSearchGlobal.Body.String())
+		var searchGlobalOut struct {
+			Items []struct {
+				ID          string `json:"id"`
+				NamePT      string `json:"name_pt"`
+				LicenseInfo string `json:"license_info"`
+				IsCustom    bool   `json:"is_custom"`
+			} `json:"items"`
+			Total int `json:"total"`
+		}
+		require.NoError(t, json.Unmarshal(wSearchGlobal.Body.Bytes(), &searchGlobalOut))
+		require.GreaterOrEqual(t, searchGlobalOut.Total, 1)
+		assert.Equal(t, "Supino Reto com Barra", searchGlobalOut.Items[0].NamePT)
+		assert.Contains(t, searchGlobalOut.Items[0].LicenseInfo, "The Unlicense")
+		assert.False(t, searchGlobalOut.Items[0].IsCustom)
+		globalExerciseID := searchGlobalOut.Items[0].ID
+
+		// Treinador não pode editar ou excluir exercício do catálogo global
+		wPatchGlobal := doJSONRequest(t, router, http.MethodPatch, "/v1/catalog/exercises/"+globalExerciseID, trainerAToken, map[string]any{
+			"name_pt":        "Tentativa",
+			"primary_muscle": "chest",
+			"equipment":      "barbell",
+			"category":       "strength",
+			"level":          "intermediate",
+		})
+		assert.Equal(t, http.StatusForbidden, wPatchGlobal.Code)
+
+		wDeleteGlobal := doJSONRequest(t, router, http.MethodDelete, "/v1/catalog/exercises/"+globalExerciseID, trainerAToken, nil)
+		assert.Equal(t, http.StatusForbidden, wDeleteGlobal.Code)
+
+		// 11.2 Importador idempotente free-exercise-db contra PostgreSQL real
+		importer := appCatalog.NewImporter(postgres.NewCatalogRepository(db))
+		fixtureJSON := `[
+			{
+				"id": "Barbell_Bench_Press_-_Medium_Grip",
+				"name": "Barbell Bench Press - Medium Grip",
+				"force": "push",
+				"level": "beginner",
+				"mechanic": "compound",
+				"equipment": "barbell",
+				"primaryMuscles": ["chest"],
+				"secondaryMuscles": ["shoulders", "triceps"],
+				"instructions": ["Lie back on a flat bench."],
+				"category": "strength"
+			},
+			{
+				"id": "Integration_Test_Incline_Dumbbell_Press",
+				"name": "Incline Dumbbell Press",
+				"force": "push",
+				"level": "intermediate",
+				"mechanic": "compound",
+				"equipment": "dumbbell",
+				"primaryMuscles": ["chest"],
+				"secondaryMuscles": ["shoulders"],
+				"instructions": ["Press the dumbbells overhead with control."],
+				"category": "strength"
+			}
+		]`
+		impRun1, err := importer.ImportFreeExerciseDB(context.Background(), strings.NewReader(fixtureJSON))
+		require.NoError(t, err)
+		assert.Equal(t, 2, impRun1.Processed)
+		assert.Equal(t, 1, impRun1.Inserted)
+		assert.Equal(t, 1, impRun1.Updated)
+
+		impRun2, err := importer.ImportFreeExerciseDB(context.Background(), strings.NewReader(fixtureJSON))
+		require.NoError(t, err)
+		assert.Equal(t, 2, impRun2.Processed)
+		assert.Equal(t, 0, impRun2.Inserted)
+		assert.Equal(t, 2, impRun2.Updated)
+
+		// 11.3 Treinador A cria exercício customizado na sua org pessoal e envia mídia (Imagem PNG)
+		wCreateCustom := doJSONRequest(t, router, http.MethodPost, "/v1/catalog/exercises", trainerAToken, map[string]any{
+			"name_pt":           "Crucifixo Customizado do Studio",
+			"primary_muscle":    "chest",
+			"secondary_muscles": []string{"shoulders"},
+			"equipment":         "cable",
+			"category":          "strength",
+			"level":             "intermediate",
+			"instructions_pt":   []string{"Mantenha escápulas estabilizadas durante o arco."},
+		})
+		require.Equal(t, http.StatusCreated, wCreateCustom.Code, wCreateCustom.Body.String())
+		var customOut struct {
+			ID       string `json:"id"`
+			IsCustom bool   `json:"is_custom"`
+		}
+		require.NoError(t, json.Unmarshal(wCreateCustom.Body.Bytes(), &customOut))
+		assert.True(t, customOut.IsCustom)
+
+		wMediaReq := doJSONRequest(t, router, http.MethodPost, "/v1/catalog/exercises/"+customOut.ID+"/media/upload-url", trainerAToken, map[string]string{
+			"filename":   "execucao.png",
+			"mime_type":  "image/png",
+			"media_type": "IMAGE",
+		})
+		require.Equal(t, http.StatusOK, wMediaReq.Code, wMediaReq.Body.String())
+		var mediaReqOut struct {
+			MediaID    string `json:"media_id"`
+			StorageKey string `json:"storage_key"`
+		}
+		require.NoError(t, json.Unmarshal(wMediaReq.Body.Bytes(), &mediaReqOut))
+		assert.True(t, strings.HasPrefix(mediaReqOut.StorageKey, "catalog/"))
+
+		fakeStorage.putFakeObject(mediaReqOut.StorageKey, 204800, "image/png")
+		wMediaConfirm := doJSONRequest(t, router, http.MethodPost, "/v1/catalog/exercises/"+customOut.ID+"/media/confirm", trainerAToken, map[string]any{
+			"storage_key": mediaReqOut.StorageKey,
+			"filename":    "execucao.png",
+			"mime_type":   "image/png",
+			"size_bytes":  204800,
+		})
+		require.Equal(t, http.StatusCreated, wMediaConfirm.Code, wMediaConfirm.Body.String())
+
+		// 11.4 Aluno com vínculo ENDED não acessa customizados; aluno com vínculo ACTIVE vê exercício e obtém URL assinada, mas não pode criar
+		noCPFToken, _ := loginAndGetTokens(t, router, "nocpf@fit.test", "NoCPFPass!2026")
+		wEndedStudDetail := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/exercises/"+customOut.ID, noCPFToken, nil)
+		assert.Equal(t, http.StatusForbidden, wEndedStudDetail.Code)
+
+		wActiveStudCreate := doJSONRequest(t, router, http.MethodPost, "/v1/students", trainerAToken, map[string]string{
+			"email":     "aluno.orga@fit.test",
+			"full_name": "Aluno Ativo Org A",
+			"password":  "OrgAPass!2026",
+		})
+		require.Equal(t, http.StatusCreated, wActiveStudCreate.Code, wActiveStudCreate.Body.String())
+		activeStudToken, _ := loginAndGetTokens(t, router, "aluno.orga@fit.test", "OrgAPass!2026")
+
+		wStudCatalog := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/exercises?scope=custom", activeStudToken, nil)
+		require.Equal(t, http.StatusOK, wStudCatalog.Code, wStudCatalog.Body.String())
+		assert.Contains(t, wStudCatalog.Body.String(), customOut.ID)
+
+		wStudMedia := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/exercises/"+customOut.ID+"/media/"+mediaReqOut.MediaID+"/signed-url", activeStudToken, nil)
+		require.Equal(t, http.StatusOK, wStudMedia.Code, wStudMedia.Body.String())
+		assert.Contains(t, wStudMedia.Body.String(), mediaReqOut.StorageKey)
+
+		wStudCreate := doJSONRequest(t, router, http.MethodPost, "/v1/catalog/exercises", activeStudToken, map[string]any{
+			"name_pt":        "Proibido para Aluno",
+			"primary_muscle": "chest",
+			"equipment":      "barbell",
+			"category":       "strength",
+			"level":          "beginner",
+		})
+		assert.Equal(t, http.StatusForbidden, wStudCreate.Code)
+
+		// 11.5 Treinador B e aluno de outra org não enxergam nem acessam o exercício customizado do Treinador A
+		wTrainerBSearch := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/exercises?scope=custom", trainerBToken, nil)
+		require.Equal(t, http.StatusOK, wTrainerBSearch.Code)
+		assert.NotContains(t, wTrainerBSearch.Body.String(), customOut.ID)
+
+		wTrainerBDetail := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/exercises/"+customOut.ID, trainerBToken, nil)
+		assert.Equal(t, http.StatusForbidden, wTrainerBDetail.Code)
+
+		wTrainerBMedia := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/exercises/"+customOut.ID+"/media/"+mediaReqOut.MediaID+"/signed-url", trainerBToken, nil)
+		assert.Equal(t, http.StatusForbidden, wTrainerBMedia.Code)
+
+		wOtherStudCreate := doJSONRequest(t, router, http.MethodPost, "/v1/students", trainerBToken, map[string]string{
+			"email":     "aluno.orgb@fit.test",
+			"full_name": "Aluno Org B",
+			"password":  "OrgBPass!2026",
+		})
+		require.Equal(t, http.StatusCreated, wOtherStudCreate.Code, wOtherStudCreate.Body.String())
+		otherStudToken, _ := loginAndGetTokens(t, router, "aluno.orgb@fit.test", "OrgBPass!2026")
+
+		wOtherStudDetail := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/exercises/"+customOut.ID, otherStudToken, nil)
+		assert.Equal(t, http.StatusForbidden, wOtherStudDetail.Code)
 	})
 }
