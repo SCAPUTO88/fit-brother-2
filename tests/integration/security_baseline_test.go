@@ -895,17 +895,28 @@ func TestSecurityBaselinePostgresIntegration(t *testing.T) {
 		})
 		require.Equal(t, http.StatusCreated, wMediaConfirm.Code, wMediaConfirm.Body.String())
 
-		// 11.4 Aluno vinculado à org do Treinador A vê exercício e obtém URL assinada, mas não pode criar
+		// 11.4 Aluno com vínculo ENDED não acessa customizados; aluno com vínculo ACTIVE vê exercício e obtém URL assinada, mas não pode criar
 		noCPFToken, _ := loginAndGetTokens(t, router, "nocpf@fit.test", "NoCPFPass!2026")
-		wStudCatalog := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/exercises?scope=custom", noCPFToken, nil)
+		wEndedStudDetail := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/exercises/"+customOut.ID, noCPFToken, nil)
+		assert.Equal(t, http.StatusForbidden, wEndedStudDetail.Code)
+
+		wActiveStudCreate := doJSONRequest(t, router, http.MethodPost, "/v1/students", trainerAToken, map[string]string{
+			"email":     "aluno.orga@fit.test",
+			"full_name": "Aluno Ativo Org A",
+			"password":  "OrgAPass!2026",
+		})
+		require.Equal(t, http.StatusCreated, wActiveStudCreate.Code, wActiveStudCreate.Body.String())
+		activeStudToken, _ := loginAndGetTokens(t, router, "aluno.orga@fit.test", "OrgAPass!2026")
+
+		wStudCatalog := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/exercises?scope=custom", activeStudToken, nil)
 		require.Equal(t, http.StatusOK, wStudCatalog.Code, wStudCatalog.Body.String())
 		assert.Contains(t, wStudCatalog.Body.String(), customOut.ID)
 
-		wStudMedia := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/exercises/"+customOut.ID+"/media/"+mediaReqOut.MediaID+"/signed-url", noCPFToken, nil)
+		wStudMedia := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/exercises/"+customOut.ID+"/media/"+mediaReqOut.MediaID+"/signed-url", activeStudToken, nil)
 		require.Equal(t, http.StatusOK, wStudMedia.Code, wStudMedia.Body.String())
 		assert.Contains(t, wStudMedia.Body.String(), mediaReqOut.StorageKey)
 
-		wStudCreate := doJSONRequest(t, router, http.MethodPost, "/v1/catalog/exercises", noCPFToken, map[string]any{
+		wStudCreate := doJSONRequest(t, router, http.MethodPost, "/v1/catalog/exercises", activeStudToken, map[string]any{
 			"name_pt":        "Proibido para Aluno",
 			"primary_muscle": "chest",
 			"equipment":      "barbell",
