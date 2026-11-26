@@ -15,14 +15,15 @@ type CreateSessionInput struct {
 }
 
 type CreateExerciseInput struct {
-	WorkoutSessionID string `json:"workout_session_id" binding:"required,uuid"`
-	Name             string `json:"name" binding:"required,min=2"`
-	Sets             int    `json:"sets" binding:"min=0"`
-	Reps             string `json:"reps"`
-	RestSeconds      int    `json:"rest_seconds"`
-	Notes            string `json:"notes"`
-	VideoURL         string `json:"video_url"`
-	Position         int    `json:"position"`
+	WorkoutSessionID  string `json:"workout_session_id" binding:"required,uuid"`
+	CatalogExerciseID string `json:"catalog_exercise_id"`
+	Name              string `json:"name" binding:"required,min=2"`
+	Sets              int    `json:"sets" binding:"min=0"`
+	Reps              string `json:"reps"`
+	RestSeconds       int    `json:"rest_seconds"`
+	Notes             string `json:"notes"`
+	VideoURL          string `json:"video_url"`
+	Position          int    `json:"position"`
 }
 
 type PlanOutput struct {
@@ -45,15 +46,17 @@ type SessionOutput struct {
 }
 
 type ExerciseOutput struct {
-	ID               string `json:"id"`
-	WorkoutSessionID string `json:"workout_session_id"`
-	Name             string `json:"name"`
-	Sets             int    `json:"sets"`
-	Reps             string `json:"reps"`
-	RestSeconds      int    `json:"rest_seconds"`
-	Notes            string `json:"notes"`
-	VideoURL         string `json:"video_url"`
-	Position         int    `json:"position"`
+	ID                string  `json:"id"`
+	WorkoutSessionID  string  `json:"workout_session_id"`
+	CatalogExerciseID *string `json:"catalog_exercise_id,omitempty"`
+	Name              string  `json:"name"`
+	Sets              int     `json:"sets"`
+	Reps              string  `json:"reps"`
+	RestSeconds       int     `json:"rest_seconds"`
+	Notes             string  `json:"notes"`
+	VideoURL          string  `json:"video_url"`
+	HasVideo          bool    `json:"has_video"`
+	Position          int     `json:"position"`
 }
 
 type SessionDetailsOutput struct {

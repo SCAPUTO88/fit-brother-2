@@ -125,6 +125,7 @@ func applyMigrations(t *testing.T, db *sqlx.DB) {
 	t.Helper()
 	_, err := db.Exec(`
 		DROP TABLE IF EXISTS
+			workout_assignments, workout_versions, workout_templates,
 			exercise_media, exercise_catalog, equipments, muscle_groups,
 			audit_events, privacy_requests, consent_records, user_mfa,
 			password_reset_tokens, invitations, trainer_student_relationships,
@@ -950,5 +951,279 @@ func TestSecurityBaselinePostgresIntegration(t *testing.T) {
 
 		wOtherStudDetail := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/exercises/"+customOut.ID, otherStudToken, nil)
 		assert.Equal(t, http.StatusForbidden, wOtherStudDetail.Code)
+	})
+
+	// 12. Fase 5 — Workout Builder (Templates, Clonagem, Snapshots Imutáveis, Atribuição e Contrato de Vídeo)
+	t.Run("Fase 5 - Workout Builder Templates Clonagem Versoes Imutaveis e Atribuicao", func(t *testing.T) {
+		// 12.1 Contrato legado /v1/workouts/:id agora sinaliza has_video=true quando há vídeo confirmado
+		student1RefreshToken, _ := loginAndGetTokens(t, router, "aluno1@fit.test", "AlunoPass!2026")
+		wLegacyPlans := doJSONRequest(t, router, http.MethodGet, "/v1/workouts", student1RefreshToken, nil)
+		require.Equal(t, http.StatusOK, wLegacyPlans.Code)
+		var legacyPlans []struct {
+			ID string `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal(wLegacyPlans.Body.Bytes(), &legacyPlans))
+		require.NotEmpty(t, legacyPlans)
+		wLegacyDetail := doJSONRequest(t, router, http.MethodGet, "/v1/workouts/"+legacyPlans[0].ID, student1RefreshToken, nil)
+		require.Equal(t, http.StatusOK, wLegacyDetail.Code, wLegacyDetail.Body.String())
+		assert.Contains(t, wLegacyDetail.Body.String(), `"has_video":true`)
+
+		// 12.2 Busca exercício global e cria exercício customizado Org B para testar bloqueio cross-tenant
+		wSearchGlobal := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/exercises?q=Supino+Reto", trainerAToken, nil)
+		require.Equal(t, http.StatusOK, wSearchGlobal.Code)
+		var searchOut struct {
+			Items []struct {
+				ID string `json:"id"`
+			} `json:"items"`
+		}
+		require.NoError(t, json.Unmarshal(wSearchGlobal.Body.Bytes(), &searchOut))
+		require.NotEmpty(t, searchOut.Items)
+		globalSupinoID := searchOut.Items[0].ID
+
+		wCreateOrgBCustom := doJSONRequest(t, router, http.MethodPost, "/v1/catalog/exercises", trainerBToken, map[string]any{
+			"name_pt":        "Exercicio Secreto Org B",
+			"primary_muscle": "chest",
+			"equipment":      "cable",
+			"category":       "strength",
+			"level":          "intermediate",
+		})
+		require.Equal(t, http.StatusCreated, wCreateOrgBCustom.Code, wCreateOrgBCustom.Body.String())
+		var orgBCustom struct {
+			ID string `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal(wCreateOrgBCustom.Body.Bytes(), &orgBCustom))
+
+		wCrossTenantTemplate := doJSONRequest(t, router, http.MethodPost, "/v1/workout-templates", trainerAToken, map[string]any{
+			"title": "Tentativa Cross-Tenant",
+			"sessions": []map[string]any{
+				{
+					"title":       "Sessao A",
+					"day_of_week": 1,
+					"exercises": []map[string]any{
+						{"catalog_exercise_id": orgBCustom.ID, "sets": 3, "reps": "10", "rest_seconds": 60},
+					},
+				},
+			},
+		})
+		assert.Equal(t, http.StatusForbidden, wCrossTenantTemplate.Code)
+
+		// 12.3 Treinador A cria exercício customizado com mídia confirmada e monta template reutilizável
+		wCreateOrgACustom := doJSONRequest(t, router, http.MethodPost, "/v1/catalog/exercises", trainerAToken, map[string]any{
+			"name_pt":        "Remada Builder Org A",
+			"primary_muscle": "lats",
+			"equipment":      "cable",
+			"category":       "strength",
+			"level":          "beginner",
+		})
+		require.Equal(t, http.StatusCreated, wCreateOrgACustom.Code, wCreateOrgACustom.Body.String())
+		var orgACustom struct {
+			ID string `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal(wCreateOrgACustom.Body.Bytes(), &orgACustom))
+
+		wReqMedia := doJSONRequest(t, router, http.MethodPost, "/v1/catalog/exercises/"+orgACustom.ID+"/media/upload-url", trainerAToken, map[string]string{
+			"filename":   "remada.mp4",
+			"mime_type":  "video/mp4",
+			"media_type": "VIDEO",
+		})
+		require.Equal(t, http.StatusOK, wReqMedia.Code, wReqMedia.Body.String())
+		var mediaReq struct {
+			MediaID    string `json:"media_id"`
+			StorageKey string `json:"storage_key"`
+		}
+		require.NoError(t, json.Unmarshal(wReqMedia.Body.Bytes(), &mediaReq))
+		fakeStorage.putFakeObject(mediaReq.StorageKey, 512000, "video/mp4")
+		wConfirmMedia := doJSONRequest(t, router, http.MethodPost, "/v1/catalog/exercises/"+orgACustom.ID+"/media/confirm", trainerAToken, map[string]any{
+			"storage_key": mediaReq.StorageKey,
+			"filename":    "remada.mp4",
+			"mime_type":   "video/mp4",
+			"size_bytes":  512000,
+		})
+		require.Equal(t, http.StatusCreated, wConfirmMedia.Code, wConfirmMedia.Body.String())
+
+		wCreateTpl := doJSONRequest(t, router, http.MethodPost, "/v1/workout-templates", trainerAToken, map[string]any{
+			"title":       "Template Hipertrofia AB",
+			"description": "Divisão base superior e dorsais",
+			"goal":        "Hipertrofia",
+			"sessions": []map[string]any{
+				{
+					"title":       "Treino A - Peito e Costas",
+					"day_of_week": 1,
+					"exercises": []map[string]any{
+						{
+							"catalog_exercise_id": globalSupinoID,
+							"sets":                4,
+							"reps":                "8-10",
+							"rest_seconds":        90,
+						},
+						{
+							"catalog_exercise_id": orgACustom.ID,
+							"sets":                3,
+							"reps":                "10-12",
+							"rest_seconds":        60,
+						},
+					},
+				},
+			},
+		})
+		require.Equal(t, http.StatusCreated, wCreateTpl.Code, wCreateTpl.Body.String())
+		var tplOut struct {
+			ID             string `json:"id"`
+			DraftStructure struct {
+				Sessions []struct {
+					Exercises []struct {
+						Name     string  `json:"name"`
+						MediaID  *string `json:"media_id"`
+						HasMedia bool    `json:"has_media"`
+					} `json:"exercises"`
+				} `json:"sessions"`
+			} `json:"draft_structure"`
+		}
+		require.NoError(t, json.Unmarshal(wCreateTpl.Body.Bytes(), &tplOut))
+		require.Len(t, tplOut.DraftStructure.Sessions, 1)
+		require.Len(t, tplOut.DraftStructure.Sessions[0].Exercises, 2)
+		assert.Equal(t, "Supino Reto com Barra", tplOut.DraftStructure.Sessions[0].Exercises[0].Name)
+		assert.True(t, tplOut.DraftStructure.Sessions[0].Exercises[1].HasMedia)
+		require.NotNil(t, tplOut.DraftStructure.Sessions[0].Exercises[1].MediaID)
+		assert.Equal(t, mediaReq.MediaID, *tplOut.DraftStructure.Sessions[0].Exercises[1].MediaID)
+
+		// 12.4 Publica v1 e atribui ao aluno ativo da Org A
+		wStudBuilderCreate := doJSONRequest(t, router, http.MethodPost, "/v1/students", trainerAToken, map[string]string{
+			"email":     "builder.aluno@fit.test",
+			"full_name": "Aluno Builder Org A",
+			"password":  "BuilderPass!2026",
+		})
+		require.Equal(t, http.StatusCreated, wStudBuilderCreate.Code, wStudBuilderCreate.Body.String())
+		var builderStud struct {
+			ID string `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal(wStudBuilderCreate.Body.Bytes(), &builderStud))
+		builderStudToken, _ := loginAndGetTokens(t, router, "builder.aluno@fit.test", "BuilderPass!2026")
+
+		wAssignV1 := doJSONRequest(t, router, http.MethodPost, "/v1/workout-templates/"+tplOut.ID+"/assign", trainerAToken, map[string]any{
+			"student_id": builderStud.ID,
+			"notes":      "Ciclo 1 - Foco técnico",
+		})
+		require.Equal(t, http.StatusCreated, wAssignV1.Code, wAssignV1.Body.String())
+		var assignOut struct {
+			ID               string `json:"id"`
+			WorkoutVersionID string `json:"workout_version_id"`
+			VersionNumber    int    `json:"version_number"`
+		}
+		require.NoError(t, json.Unmarshal(wAssignV1.Body.Bytes(), &assignOut))
+		assert.Equal(t, 1, assignOut.VersionNumber)
+
+		// 12.5 Editar rascunho e publicar v2 NÃO corrompe a versão v1 nem a atribuição histórica
+		wUpdateDraft := doJSONRequest(t, router, http.MethodPatch, "/v1/workout-templates/"+tplOut.ID, trainerAToken, map[string]any{
+			"title": "Template Hipertrofia AB v2",
+			"goal":  "Força",
+			"sessions": []map[string]any{
+				{
+					"title":       "Treino A - Peito Pesado",
+					"day_of_week": 1,
+					"exercises": []map[string]any{
+						{
+							"catalog_exercise_id": globalSupinoID,
+							"sets":                5,
+							"reps":                "5",
+							"rest_seconds":        120,
+						},
+					},
+				},
+				{
+					"title":       "Treino B - Pernas",
+					"day_of_week": 3,
+					"exercises": []map[string]any{
+						{
+							"name":         "Agachamento Livre",
+							"sets":         4,
+							"reps":         "6-8",
+							"rest_seconds": 120,
+						},
+					},
+				},
+			},
+		})
+		require.Equal(t, http.StatusOK, wUpdateDraft.Code, wUpdateDraft.Body.String())
+
+		wPublishV2 := doJSONRequest(t, router, http.MethodPost, "/v1/workout-templates/"+tplOut.ID+"/publish", trainerAToken, nil)
+		require.Equal(t, http.StatusCreated, wPublishV2.Code, wPublishV2.Body.String())
+		var v2Out struct {
+			VersionNumber int `json:"version_number"`
+		}
+		require.NoError(t, json.Unmarshal(wPublishV2.Body.Bytes(), &v2Out))
+		assert.Equal(t, 2, v2Out.VersionNumber)
+
+		// Trigger no Postgres proíbe UPDATE direto em workout_versions
+		_, tamperErr := db.Exec(`UPDATE workout_versions SET title = 'Adulterado' WHERE id = $1`, assignOut.WorkoutVersionID)
+		require.Error(t, tamperErr)
+
+		// Aluno continua vendo snapshot imutável v1 com título original e 4 séries
+		wStudListAssign := doJSONRequest(t, router, http.MethodGet, "/v1/workout-assignments", builderStudToken, nil)
+		require.Equal(t, http.StatusOK, wStudListAssign.Code, wStudListAssign.Body.String())
+		assert.Contains(t, wStudListAssign.Body.String(), assignOut.ID)
+
+		wStudGetAssign := doJSONRequest(t, router, http.MethodGet, "/v1/workout-assignments/"+assignOut.ID, builderStudToken, nil)
+		require.Equal(t, http.StatusOK, wStudGetAssign.Code, wStudGetAssign.Body.String())
+		var studAssignDetail struct {
+			TemplateTitle     string `json:"template_title"`
+			VersionNumber     int    `json:"version_number"`
+			SnapshotStructure struct {
+				Sessions []struct {
+					Exercises []struct {
+						Sets int `json:"sets"`
+					} `json:"exercises"`
+				} `json:"sessions"`
+			} `json:"snapshot_structure"`
+		}
+		require.NoError(t, json.Unmarshal(wStudGetAssign.Body.Bytes(), &studAssignDetail))
+		assert.Equal(t, 1, studAssignDetail.VersionNumber)
+		assert.Equal(t, "Template Hipertrofia AB", studAssignDetail.TemplateTitle)
+		require.Len(t, studAssignDetail.SnapshotStructure.Sessions, 1)
+		assert.Equal(t, 4, studAssignDetail.SnapshotStructure.Sessions[0].Exercises[0].Sets)
+
+		// Aluno consegue obter URL assinada de demonstração de mídia do catálogo referenciada na ficha
+		wStudSignedMedia := doJSONRequest(t, router, http.MethodGet, "/v1/catalog/exercises/"+orgACustom.ID+"/media/"+mediaReq.MediaID+"/signed-url", builderStudToken, nil)
+		require.Equal(t, http.StatusOK, wStudSignedMedia.Code, wStudSignedMedia.Body.String())
+		assert.Contains(t, wStudSignedMedia.Body.String(), mediaReq.StorageKey)
+
+		// 12.6 Clonagem cria template independente mantendo sessões e referências
+		wClone := doJSONRequest(t, router, http.MethodPost, "/v1/workout-templates/"+tplOut.ID+"/clone", trainerAToken, map[string]string{
+			"title": "Hipertrofia AB Feminino",
+		})
+		require.Equal(t, http.StatusCreated, wClone.Code, wClone.Body.String())
+		var clonedOut struct {
+			ID                   string  `json:"id"`
+			ClonedFromTemplateID *string `json:"cloned_from_template_id"`
+			LatestVersionNumber  int     `json:"latest_version_number"`
+			SessionCount         int     `json:"session_count"`
+		}
+		require.NoError(t, json.Unmarshal(wClone.Body.Bytes(), &clonedOut))
+		assert.NotEqual(t, tplOut.ID, clonedOut.ID)
+		require.NotNil(t, clonedOut.ClonedFromTemplateID)
+		assert.Equal(t, tplOut.ID, *clonedOut.ClonedFromTemplateID)
+		assert.Equal(t, 0, clonedOut.LatestVersionNumber)
+		assert.Equal(t, 2, clonedOut.SessionCount)
+
+		// 12.7 RBAC & Multi-Tenancy: estudante não cria template; Treinador B, aluno ENDED e aluno Org B bloqueados
+		wStudCreateTpl := doJSONRequest(t, router, http.MethodPost, "/v1/workout-templates", builderStudToken, map[string]any{
+			"title":    "Template Proibido",
+			"sessions": []any{},
+		})
+		assert.Equal(t, http.StatusForbidden, wStudCreateTpl.Code)
+
+		wTrainerBGetTpl := doJSONRequest(t, router, http.MethodGet, "/v1/workout-templates/"+tplOut.ID, trainerBToken, nil)
+		assert.Equal(t, http.StatusForbidden, wTrainerBGetTpl.Code)
+
+		wTrainerBGetAssign := doJSONRequest(t, router, http.MethodGet, "/v1/workout-assignments/"+assignOut.ID, trainerBToken, nil)
+		assert.Equal(t, http.StatusForbidden, wTrainerBGetAssign.Code)
+
+		noCPFToken, _ := loginAndGetTokens(t, router, "nocpf@fit.test", "NoCPFPass!2026")
+		wEndedAssign := doJSONRequest(t, router, http.MethodGet, "/v1/workout-assignments/"+assignOut.ID, noCPFToken, nil)
+		assert.Equal(t, http.StatusForbidden, wEndedAssign.Code)
+
+		otherStudToken, _ := loginAndGetTokens(t, router, "aluno.orgb@fit.test", "OrgBPass!2026")
+		wOtherStudAssign := doJSONRequest(t, router, http.MethodGet, "/v1/workout-assignments/"+assignOut.ID, otherStudToken, nil)
+		assert.Equal(t, http.StatusForbidden, wOtherStudAssign.Code)
 	})
 }

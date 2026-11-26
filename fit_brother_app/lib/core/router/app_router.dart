@@ -13,11 +13,14 @@ import '../../features/catalog/exercise_detail_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/privacy/privacy_center_screen.dart';
 import '../../features/students/create_student_screen.dart';
+import '../../features/workouts/assignment_detail_screen.dart';
 import '../../features/workouts/create_exercise_screen.dart';
 import '../../features/workouts/create_plan_screen.dart';
 import '../../features/workouts/create_session_screen.dart';
 import '../../features/workouts/plan_detail_screen.dart';
+import '../../features/workouts/template_editor_screen.dart';
 import '../../features/workouts/workout_plans_screen.dart';
+import '../../features/workouts/workout_templates_screen.dart';
 
 class _RouterRefreshNotifier extends ChangeNotifier {
   void refresh() => notifyListeners();
@@ -121,6 +124,26 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final sessionId = state.pathParameters['session_id']!;
           return CreateExerciseScreen(planId: planId, sessionId: sessionId);
         },
+      ),
+      GoRoute(
+        path: '/workout-builder',
+        builder: (context, state) => const WorkoutTemplatesScreen(),
+      ),
+      GoRoute(
+        path: '/workout-builder/new',
+        builder: (context, state) => const TemplateEditorScreen(),
+      ),
+      GoRoute(
+        path: '/workout-builder/:id',
+        builder: (context, state) => TemplateEditorScreen(
+          templateId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
+        path: '/workout-assignments/:id',
+        builder: (context, state) => AssignmentDetailScreen(
+          assignmentId: state.pathParameters['id']!,
+        ),
       ),
     ],
   );
