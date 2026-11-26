@@ -93,7 +93,7 @@ func (m *memUserRepo) GetRefreshTokenByHash(_ context.Context, _ string) (*domai
 	return nil, nil
 }
 func (m *memUserRepo) RevokeRefreshToken(_ context.Context, _ uuid.UUID) error { return nil }
-func (m *memUserRepo) RevokeTokenFamily(_ context.Context, _ uuid.UUID) error  { return nil }
+func (m *memUserRepo) RevokeTokenFamily(_ context.Context, _ uuid.UUID) error { return nil }
 func (m *memUserRepo) RevokeAllByUserID(_ context.Context, id uuid.UUID) error {
 	m.revoked[id] = true
 	return nil

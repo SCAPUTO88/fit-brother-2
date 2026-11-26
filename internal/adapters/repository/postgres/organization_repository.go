@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -214,13 +215,18 @@ func (r *OrganizationRepository) HasActiveRelationship(ctx context.Context, trai
 }
 
 func (r *OrganizationRepository) UpdateRelationshipStatus(ctx context.Context, orgID, trainerUserID, studentID uuid.UUID, status string) error {
+	var endedAt *time.Time
+	if status == organization.RelEnded {
+		now := time.Now().UTC()
+		endedAt = &now
+	}
 	query := `
 		UPDATE trainer_student_relationships
 		SET status = $1,
-		    ended_at = CASE WHEN $1 = 'ENDED' THEN NOW() ELSE NULL END
-		WHERE organization_id = $2 AND trainer_user_id = $3 AND student_id = $4
+		    ended_at = $2
+		WHERE organization_id = $3 AND trainer_user_id = $4 AND student_id = $5
 	`
-	res, err := getExecutor(ctx, r.db).ExecContext(ctx, query, status, orgID, trainerUserID, studentID)
+	res, err := getExecutor(ctx, r.db).ExecContext(ctx, query, status, endedAt, orgID, trainerUserID, studentID)
 	if err != nil {
 		return err
 	}
