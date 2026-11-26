@@ -32,7 +32,7 @@ class DashboardScreen extends ConsumerWidget {
         ],
       ),
       drawer: _buildDrawer(context, isStudent: isStudent),
-      body: isStudent ? _buildStudentHome(context) : _buildTrainerHome(ref),
+      body: isStudent ? _buildStudentHome(context) : _buildTrainerHome(context, ref),
       floatingActionButton: isStudent
           ? null
           : FloatingActionButton.extended(
@@ -72,6 +72,12 @@ class DashboardScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
+                onPressed: () => context.push('/catalog'),
+                icon: const Icon(Icons.menu_book),
+                label: const Text('BIBLIOTECA DE EXERCÍCIOS'),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
                 onPressed: () => context.push('/privacy'),
                 icon: const Icon(Icons.privacy_tip_outlined),
                 label: const Text('PRIVACIDADE & LGPD'),
@@ -83,7 +89,7 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildTrainerHome(WidgetRef ref) {
+  Widget _buildTrainerHome(BuildContext context, WidgetRef ref) {
     final studentsAsync = ref.watch(studentsProvider);
 
     return Padding(
@@ -91,9 +97,22 @@ class DashboardScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Meus Alunos',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              const Text(
+                'Meus Alunos',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => context.push('/catalog'),
+                icon: const Icon(Icons.menu_book),
+                label: const Text('Biblioteca de Exercícios'),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           Expanded(
@@ -202,6 +221,14 @@ class DashboardScreen extends ConsumerWidget {
             onTap: () {
               Navigator.pop(context);
               context.push('/workouts');
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.menu_book),
+            title: const Text('Biblioteca de Exercícios'),
+            onTap: () {
+              Navigator.pop(context);
+              context.push('/catalog');
             },
           ),
           if (!isStudent)
