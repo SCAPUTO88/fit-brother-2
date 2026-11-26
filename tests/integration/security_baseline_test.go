@@ -245,6 +245,10 @@ func TestSecurityBaselinePostgresIntegration(t *testing.T) {
 			SignedURLTTL: 5 * time.Minute,
 		},
 		CORS: config.CORSConfig{AllowedOrigins: "http://localhost:3000"},
+		RateLimit: config.RateLimitConfig{
+			AuthMaxRequests: 100,
+			AuthWindow:      time.Minute,
+		},
 	}
 
 	fakeStorage := newIntegrationVideoStorage()
