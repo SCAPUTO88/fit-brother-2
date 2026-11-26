@@ -3,8 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/auth_provider.dart';
+import '../../features/auth/invite_accept_screen.dart';
 import '../../features/auth/login_screen.dart';
+import '../../features/auth/mfa_settings_screen.dart';
+import '../../features/auth/password_reset_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
+import '../../features/privacy/privacy_center_screen.dart';
 import '../../features/students/create_student_screen.dart';
 import '../../features/workouts/create_exercise_screen.dart';
 import '../../features/workouts/create_plan_screen.dart';
@@ -16,6 +20,8 @@ class _RouterRefreshNotifier extends ChangeNotifier {
   void refresh() => notifyListeners();
 }
 
+const _publicRoutes = {'/login', '/forgot-password', '/activate'};
+
 final appRouterProvider = Provider<GoRouter>((ref) {
   final refreshListenable = _RouterRefreshNotifier();
   ref.listen<AuthState>(authProvider, (_, _) => refreshListenable.refresh());
@@ -26,12 +32,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     refreshListenable: refreshListenable,
     redirect: (context, state) {
       final isLoggedIn = ref.read(authProvider).isLoggedIn;
-      final isLoginRoute = state.matchedLocation == '/login';
+      final isPublicRoute = _publicRoutes.contains(state.matchedLocation);
 
-      if (!isLoggedIn && !isLoginRoute) {
+      if (!isLoggedIn && !isPublicRoute) {
         return '/login';
       }
-      if (isLoggedIn && isLoginRoute) {
+      if (isLoggedIn && isPublicRoute) {
         return '/dashboard';
       }
       return null;
@@ -42,8 +48,28 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const LoginScreen(),
       ),
       GoRoute(
+        path: '/forgot-password',
+        builder: (context, state) => PasswordResetScreen(
+          initialToken: state.uri.queryParameters['token'],
+        ),
+      ),
+      GoRoute(
+        path: '/activate',
+        builder: (context, state) => InviteAcceptScreen(
+          initialToken: state.uri.queryParameters['token'],
+        ),
+      ),
+      GoRoute(
         path: '/dashboard',
         builder: (context, state) => const DashboardScreen(),
+      ),
+      GoRoute(
+        path: '/privacy',
+        builder: (context, state) => const PrivacyCenterScreen(),
+      ),
+      GoRoute(
+        path: '/settings/security',
+        builder: (context, state) => const MFASettingsScreen(),
       ),
       GoRoute(
         path: '/students/create',

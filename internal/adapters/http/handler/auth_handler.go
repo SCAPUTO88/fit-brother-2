@@ -19,6 +19,8 @@ type AuthHandler struct {
 	loginUseCase   *auth.LoginUseCase
 	refreshUseCase *auth.RefreshUseCase
 	logoutUseCase  *auth.LogoutUseCase
+	resetUseCase   *auth.PasswordResetUseCase
+	mfaUseCase     *auth.MFAUseCase
 	isProduction   bool
 	refreshTTL     time.Duration
 }
@@ -42,18 +44,46 @@ func NewAuthHandler(
 	}
 }
 
+func (h *AuthHandler) WithPhase3(resetUC *auth.PasswordResetUseCase, mfaUC *auth.MFAUseCase) *AuthHandler {
+	h.resetUseCase = resetUC
+	h.mfaUseCase = mfaUC
+	return h
+}
+
 func (h *AuthHandler) RegisterRoutes(router *gin.RouterGroup, authLimiter gin.HandlerFunc) {
 	group := router.Group("/auth")
 	{
 		if authLimiter != nil {
 			group.POST("/login", authLimiter, h.Login)
 			group.POST("/refresh", authLimiter, h.Refresh)
+			if h.resetUseCase != nil {
+				group.POST("/password-reset/request", authLimiter, h.RequestPasswordReset)
+				group.POST("/password-reset/confirm", authLimiter, h.ConfirmPasswordReset)
+			}
 		} else {
 			group.POST("/login", h.Login)
 			group.POST("/refresh", h.Refresh)
+			if h.resetUseCase != nil {
+				group.POST("/password-reset/request", h.RequestPasswordReset)
+				group.POST("/password-reset/confirm", h.ConfirmPasswordReset)
+			}
 		}
 		group.POST("/logout", h.Logout)
 	}
+}
+
+func (h *AuthHandler) RegisterProtectedRoutes(router *gin.RouterGroup, auther gin.HandlerFunc) {
+	if h.mfaUseCase == nil {
+		return
+	}
+	mfa := router.Group("/auth/mfa")
+	if auther != nil {
+		mfa.Use(auther)
+	}
+	mfa.GET("/status", h.MFAStatus)
+	mfa.POST("/setup", h.MFASetup)
+	mfa.POST("/enable", h.MFAEnable)
+	mfa.POST("/disable", h.MFADisable)
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
@@ -67,12 +97,19 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	output, err := h.loginUseCase.Execute(c.Request.Context(), input)
 	if err != nil {
+		if errors.Is(err, auth.ErrMFARequired) {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error":        err.Error(),
+				"mfa_required": true,
+			})
+			return
+		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
 	if wantsCookieSession(c) {
-		if err := h.setSessionCookies(c, output); err != nil {
+		if err := setSessionCookiesWithConfig(c, output, h.isProduction, h.refreshTTL); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "falha ao emitir sessão segura"})
 			return
 		}
@@ -114,14 +151,14 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 	output, err := h.refreshUseCase.Execute(c.Request.Context(), input)
 	if err != nil {
 		if fromCookie || wantsCookieSession(c) {
-			h.clearSessionCookies(c)
+			clearSessionCookiesWithConfig(c, h.isProduction)
 		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
 	if fromCookie || wantsCookieSession(c) {
-		if err := h.setSessionCookies(c, output); err != nil {
+		if err := setSessionCookiesWithConfig(c, output, h.isProduction, h.refreshTTL); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "falha ao renovar sessão segura"})
 			return
 		}
@@ -161,20 +198,119 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	}
 
 	if fromCookie || wantsCookieSession(c) || hasSessionCookies(c) {
-		h.clearSessionCookies(c)
+		clearSessionCookiesWithConfig(c, h.isProduction)
 	}
 
 	c.Status(http.StatusNoContent)
 }
 
-func (h *AuthHandler) setSessionCookies(c *gin.Context, out *auth.TokenOutput) error {
+func (h *AuthHandler) RequestPasswordReset(c *gin.Context) {
+	var input auth.PasswordResetRequestInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "e-mail válido obrigatório"})
+		return
+	}
+	input.ClientIP = getClientIP(c)
+	if err := h.resetUseCase.Request(c.Request.Context(), input); err != nil {
+		respondDomainError(c, err, "falha ao solicitar redefinição de senha")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Se o e-mail estiver cadastrado, enviaremos as instruções de redefinição.",
+	})
+}
+
+func (h *AuthHandler) ConfirmPasswordReset(c *gin.Context) {
+	var input auth.PasswordResetConfirmInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "token e nova senha (mínimo 8 caracteres) obrigatórios"})
+		return
+	}
+	input.ClientIP = getClientIP(c)
+	if err := h.resetUseCase.Confirm(c.Request.Context(), input); err != nil {
+		respondDomainError(c, err, "falha ao redefinir senha")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Senha redefinida com sucesso. Todas as sessões anteriores foram encerradas.",
+	})
+}
+
+func (h *AuthHandler) MFAStatus(c *gin.Context) {
+	claims, ok := middleware.GetClaims(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "acesso negado, sessão inválida"})
+		return
+	}
+	out, err := h.mfaUseCase.Status(c.Request.Context(), claims.UserID)
+	if err != nil {
+		respondDomainError(c, err, "falha ao consultar status MFA")
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *AuthHandler) MFASetup(c *gin.Context) {
+	claims, ok := middleware.GetClaims(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "acesso negado, sessão inválida"})
+		return
+	}
+	out, err := h.mfaUseCase.Setup(c.Request.Context(), claims.UserID, claims.Role)
+	if err != nil {
+		respondDomainError(c, err, "falha ao iniciar configuração MFA")
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *AuthHandler) MFAEnable(c *gin.Context) {
+	claims, ok := middleware.GetClaims(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "acesso negado, sessão inválida"})
+		return
+	}
+	var input auth.MFAVerifyInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "código TOTP de 6 dígitos obrigatório"})
+		return
+	}
+	if err := h.mfaUseCase.Enable(c.Request.Context(), claims.UserID, claims.Role, input.Code); err != nil {
+		respondDomainError(c, err, "falha ao ativar MFA")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "MFA TOTP ativado com sucesso."})
+}
+
+func (h *AuthHandler) MFADisable(c *gin.Context) {
+	claims, ok := middleware.GetClaims(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "acesso negado, sessão inválida"})
+		return
+	}
+	var input auth.MFADisableInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "senha atual e código TOTP de 6 dígitos obrigatórios"})
+		return
+	}
+	if err := h.mfaUseCase.Disable(c.Request.Context(), claims.UserID, claims.Role, input.Password, input.Code); err != nil {
+		respondDomainError(c, err, "falha ao desativar MFA")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "MFA TOTP desativado com sucesso."})
+}
+
+func setSessionCookiesWithConfig(c *gin.Context, out *auth.TokenOutput, isProduction bool, refreshTTL time.Duration) error {
 	csrfToken, err := generateCSRFToken()
 	if err != nil {
 		return err
 	}
 
-	secure := h.shouldUseSecureCookies(c)
-	refreshMaxAge := int(h.refreshTTL.Seconds())
+	if refreshTTL <= 0 {
+		refreshTTL = 7 * 24 * time.Hour
+	}
+	secure := shouldUseSecureCookies(c, isProduction)
+	refreshMaxAge := int(refreshTTL.Seconds())
 
 	// Secure é true em produção e HTTPS; dev local HTTP exige flexibilização via shouldUseSecureCookies.
 	// nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
@@ -212,8 +348,8 @@ func (h *AuthHandler) setSessionCookies(c *gin.Context, out *auth.TokenOutput) e
 	return nil
 }
 
-func (h *AuthHandler) clearSessionCookies(c *gin.Context) {
-	secure := h.shouldUseSecureCookies(c)
+func clearSessionCookiesWithConfig(c *gin.Context, isProduction bool) {
+	secure := shouldUseSecureCookies(c, isProduction)
 	expired := time.Unix(0, 0)
 
 	// nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
@@ -251,8 +387,8 @@ func (h *AuthHandler) clearSessionCookies(c *gin.Context) {
 	})
 }
 
-func (h *AuthHandler) shouldUseSecureCookies(c *gin.Context) bool {
-	if h.isProduction || c.Request.TLS != nil {
+func shouldUseSecureCookies(c *gin.Context, isProduction bool) bool {
+	if isProduction || c.Request.TLS != nil {
 		return true
 	}
 	return strings.EqualFold(strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")), "https")

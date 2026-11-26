@@ -41,7 +41,7 @@ func TestGetStudentUseCase(t *testing.T) {
 			ID:           studID,
 			UserID:       userID,
 			TrainerID:    &trainerID,
-			CPFEncrypted: encryptedVal,
+			CPFEncrypted: &encryptedVal,
 			CreatedAt:    time.Now(),
 		}, nil)
 
@@ -56,6 +56,33 @@ func TestGetStudentUseCase(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "busca@fit.com", out.Email)
 		assert.Equal(t, "99988877766", out.CPF)
+	})
+
+	t.Run("Deve retornar Student normalmente quando CPF for nulo (ADR-006)", func(t *testing.T) {
+		mockURepo := new(MockUserRepo)
+		mockSRepo := new(MockStudentRepo)
+
+		sut := student.NewGetStudentUseCase(mockURepo, mockSRepo, encrptSvc)
+
+		studID := uuid.New()
+		userID := uuid.New()
+		trainerID := uuid.New()
+
+		mockSRepo.On("GetByID", ctx, studID).Return(&domainS.Student{
+			ID:        studID,
+			UserID:    userID,
+			TrainerID: &trainerID,
+			CreatedAt: time.Now(),
+		}, nil)
+		mockURepo.On("GetByID", ctx, userID).Return(&domainU.User{
+			ID:       userID,
+			Email:    "semcpf@fit.com",
+			FullName: "Aluno Sem CPF",
+		}, nil)
+
+		out, err := sut.Execute(ctx, studID, trainerID, domainU.RoleTrainer)
+		require.NoError(t, err)
+		assert.Equal(t, "", out.CPF)
 	})
 
 	t.Run("Deve negar acesso quando outro treinador tentar consultar o aluno", func(t *testing.T) {

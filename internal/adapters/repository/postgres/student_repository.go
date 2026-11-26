@@ -72,10 +72,24 @@ func (r *StudentRepository) GetByCPFHash(ctx context.Context, cpfHash string) (*
 
 func (r *StudentRepository) ListByTrainer(ctx context.Context, trainerID uuid.UUID) ([]*student.StudentBaseInfo, error) {
 	query := `
-		SELECT s.id, u.full_name, u.email
+		SELECT DISTINCT s.id, u.full_name, u.email
 		FROM students s
 		INNER JOIN users u ON s.user_id = u.id
-		WHERE s.trainer_id = $1 AND u.deleted_at IS NULL AND u.is_active = true
+		WHERE u.deleted_at IS NULL
+		  AND u.is_active = true
+		  AND (
+			EXISTS (
+				SELECT 1 FROM trainer_student_relationships r
+				WHERE r.student_id = s.id AND r.trainer_user_id = $1 AND r.status = 'ACTIVE'
+			)
+			OR (
+				s.trainer_id = $1
+				AND NOT EXISTS (
+					SELECT 1 FROM trainer_student_relationships r2
+					WHERE r2.student_id = s.id AND r2.trainer_user_id = $1
+				)
+			)
+		  )
 		ORDER BY u.full_name ASC
 	`
 	var items []*student.StudentBaseInfo

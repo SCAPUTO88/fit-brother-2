@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base32"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
@@ -29,10 +30,32 @@ import (
 
 	apphttp "github.com/SCAPUTO88/fit-brother/internal/adapters/http"
 	"github.com/SCAPUTO88/fit-brother/internal/adapters/http/middleware"
+	domainMailer "github.com/SCAPUTO88/fit-brother/internal/domain/mailer"
 	domainStorage "github.com/SCAPUTO88/fit-brother/internal/domain/storage"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/config"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/crypto"
+	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/totp"
 )
+
+type integrationMailer struct {
+	mu           sync.Mutex
+	inviteTokens []string
+	resetTokens  []string
+}
+
+func (m *integrationMailer) SendInvitation(_ context.Context, msg domainMailer.InvitationEmail) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.inviteTokens = append(m.inviteTokens, msg.RawToken)
+	return nil
+}
+
+func (m *integrationMailer) SendPasswordReset(_ context.Context, msg domainMailer.PasswordResetEmail) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.resetTokens = append(m.resetTokens, msg.RawToken)
+	return nil
+}
 
 type integrationVideoStorage struct {
 	mu      sync.Mutex
@@ -99,8 +122,12 @@ func generateTestRSAKeys(t *testing.T) (string, string) {
 func applyMigrations(t *testing.T, db *sqlx.DB) {
 	t.Helper()
 	_, err := db.Exec(`
-		DROP TABLE IF EXISTS videos, exercises, workout_sessions, workout_plans,
-		audit_logs, biometric_data, students, refresh_tokens, users CASCADE;
+		DROP TABLE IF EXISTS
+			audit_events, privacy_requests, consent_records, user_mfa,
+			password_reset_tokens, invitations, trainer_student_relationships,
+			memberships, organizations,
+			videos, exercises, workout_sessions, workout_plans,
+			audit_logs, biometric_data, students, refresh_tokens, users CASCADE;
 	`)
 	require.NoError(t, err)
 
@@ -218,8 +245,10 @@ func TestSecurityBaselinePostgresIntegration(t *testing.T) {
 	}
 
 	fakeStorage := newIntegrationVideoStorage()
+	fakeMailer := &integrationMailer{}
 	router, err := apphttp.SetupRouterWithDeps(cfg, db, apphttp.RouterDeps{
 		VideoStorage: fakeStorage,
+		Mailer:       fakeMailer,
 	})
 	require.NoError(t, err)
 
@@ -486,4 +515,261 @@ func TestSecurityBaselinePostgresIntegration(t *testing.T) {
 	assert.False(t, anonUser.IsActive)
 	assert.NotNil(t, anonUser.Deleted)
 	assert.True(t, strings.HasPrefix(anonUser.Email, "deleted-"))
+
+	// 10. Fase 3 — Multi-tenancy, Convites, CPF opcional, Password Reset, MFA TOTP e Central LGPD
+	t.Run("Fase 3 - Identidade Multi-Tenancy Convites MFA Reset e LGPD", func(t *testing.T) {
+		// 10.1 Cadastro direto de aluno sem CPF (ADR-006)
+		wNoCPFStud := doJSONRequest(t, router, http.MethodPost, "/v1/students", trainerAToken, map[string]string{
+			"email":     "nocpf@fit.test",
+			"full_name": "Aluno Sem CPF",
+			"password":  "NoCPFPass!2026",
+		})
+		require.Equal(t, http.StatusCreated, wNoCPFStud.Code, wNoCPFStud.Body.String())
+		var noCPFStud struct {
+			ID string `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal(wNoCPFStud.Body.Bytes(), &noCPFStud))
+
+		var cpfEnc *string
+		err := db.Get(&cpfEnc, `SELECT cpf_encrypted FROM students WHERE id = $1`, noCPFStud.ID)
+		require.NoError(t, err)
+		assert.Nil(t, cpfEnc)
+
+		// 10.2 Organizações e Membros multi-tenant
+		wMyOrgs := doJSONRequest(t, router, http.MethodGet, "/v1/organizations", trainerAToken, nil)
+		require.Equal(t, http.StatusOK, wMyOrgs.Code, wMyOrgs.Body.String())
+		var myOrgs []struct {
+			OrganizationID string `json:"organization_id"`
+		}
+		require.NoError(t, json.Unmarshal(wMyOrgs.Body.Bytes(), &myOrgs))
+		require.NotEmpty(t, myOrgs)
+		defaultOrgID := myOrgs[0].OrganizationID
+
+		wStudio := doJSONRequest(t, router, http.MethodPost, "/v1/organizations", trainerAToken, map[string]string{
+			"name": "Fit Studio Integration",
+			"type": "STUDIO",
+		})
+		require.Equal(t, http.StatusCreated, wStudio.Code, wStudio.Body.String())
+		var studioOut struct {
+			ID string `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal(wStudio.Body.Bytes(), &studioOut))
+
+		wAddMem := doJSONRequest(t, router, http.MethodPost, "/v1/organizations/"+studioOut.ID+"/members", trainerAToken, map[string]string{
+			"email": trainerBEmail,
+			"role":  "TRAINER",
+		})
+		require.Equal(t, http.StatusCreated, wAddMem.Code, wAddMem.Body.String())
+
+		wListMem := doJSONRequest(t, router, http.MethodGet, "/v1/organizations/"+studioOut.ID+"/members", trainerBToken, nil)
+		require.Equal(t, http.StatusOK, wListMem.Code)
+		assert.Contains(t, wListMem.Body.String(), trainerAEmail)
+		assert.Contains(t, wListMem.Body.String(), trainerBEmail)
+
+		// Encerrar vínculo com Aluno Sem CPF bloqueia acesso do Treinador A
+		wEndRel := doJSONRequest(t, router, http.MethodPatch, "/v1/organizations/"+defaultOrgID+"/relationships/"+noCPFStud.ID, trainerAToken, map[string]string{
+			"status": "ENDED",
+		})
+		require.Equal(t, http.StatusOK, wEndRel.Code, wEndRel.Body.String())
+
+		wGetEnded := doJSONRequest(t, router, http.MethodGet, "/v1/students/"+noCPFStud.ID, trainerAToken, nil)
+		assert.Equal(t, http.StatusForbidden, wGetEnded.Code)
+
+		wWorkoutEnded := doJSONRequest(t, router, http.MethodPost, "/v1/workouts", trainerAToken, map[string]string{
+			"student_id": noCPFStud.ID,
+			"title":      "Treino Bloqueado",
+		})
+		assert.Equal(t, http.StatusForbidden, wWorkoutEnded.Code)
+
+		// 10.3 Convites (criar, revogar, aceitar sem CPF com consentimentos LGPD)
+		wRevokeCreate := doJSONRequest(t, router, http.MethodPost, "/v1/invitations", trainerAToken, map[string]string{
+			"email":     "revoked.invite@fit.test",
+			"full_name": "Convidado Revogado",
+		})
+		require.Equal(t, http.StatusCreated, wRevokeCreate.Code, wRevokeCreate.Body.String())
+		var revokedInv struct {
+			ID string `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal(wRevokeCreate.Body.Bytes(), &revokedInv))
+		revokedToken := fakeMailer.inviteTokens[len(fakeMailer.inviteTokens)-1]
+
+		wDelInv := doJSONRequest(t, router, http.MethodDelete, "/v1/invitations/"+revokedInv.ID, trainerAToken, nil)
+		require.Equal(t, http.StatusOK, wDelInv.Code)
+
+		wAcceptRevoked := doJSONRequest(t, router, http.MethodPost, "/v1/auth/invitations/accept", "", map[string]any{
+			"token":               revokedToken,
+			"password":            "InvitePass!2026",
+			"consent_terms":       true,
+			"consent_health_data": true,
+		})
+		assert.Equal(t, http.StatusUnauthorized, wAcceptRevoked.Code)
+
+		wInvite := doJSONRequest(t, router, http.MethodPost, "/v1/invitations", trainerAToken, map[string]string{
+			"organization_id": studioOut.ID,
+			"email":           "invited.student@fit.test",
+			"full_name":       "Aluno Convidado",
+		})
+		require.Equal(t, http.StatusCreated, wInvite.Code, wInvite.Body.String())
+		validInviteToken := fakeMailer.inviteTokens[len(fakeMailer.inviteTokens)-1]
+
+		wAcceptNoConsent := doJSONRequest(t, router, http.MethodPost, "/v1/auth/invitations/accept", "", map[string]any{
+			"token":               validInviteToken,
+			"password":            "InvitePass!2026",
+			"consent_terms":       true,
+			"consent_health_data": false,
+		})
+		assert.Equal(t, http.StatusBadRequest, wAcceptNoConsent.Code)
+
+		wAcceptOK := doJSONRequest(t, router, http.MethodPost, "/v1/auth/invitations/accept", "", map[string]any{
+			"token":               validInviteToken,
+			"password":            "InvitePass!2026",
+			"consent_terms":       true,
+			"consent_health_data": true,
+		})
+		require.Equal(t, http.StatusCreated, wAcceptOK.Code, wAcceptOK.Body.String())
+		var acceptOut struct {
+			StudentID      string `json:"student_id"`
+			OrganizationID string `json:"organization_id"`
+			Session        struct {
+				AccessToken  string `json:"access_token"`
+				RefreshToken string `json:"refresh_token"`
+			} `json:"session"`
+		}
+		require.NoError(t, json.Unmarshal(wAcceptOK.Body.Bytes(), &acceptOut))
+		assert.Equal(t, studioOut.ID, acceptOut.OrganizationID)
+		require.NotEmpty(t, acceptOut.Session.AccessToken)
+
+		// Reuso do convite é bloqueado
+		wReuseInv := doJSONRequest(t, router, http.MethodPost, "/v1/auth/invitations/accept", "", map[string]any{
+			"token":               validInviteToken,
+			"password":            "InvitePass!2026",
+			"consent_terms":       true,
+			"consent_health_data": true,
+		})
+		assert.Equal(t, http.StatusUnauthorized, wReuseInv.Code)
+
+		// 10.4 Redefinição de senha revoga refresh token anterior e bloqueia reuso do token
+		wResetUnknown := doJSONRequest(t, router, http.MethodPost, "/v1/auth/password-reset/request", "", map[string]string{
+			"email": "nao.existe@fit.test",
+		})
+		assert.Equal(t, http.StatusOK, wResetUnknown.Code)
+
+		beforeResetCount := len(fakeMailer.resetTokens)
+		wResetReq := doJSONRequest(t, router, http.MethodPost, "/v1/auth/password-reset/request", "", map[string]string{
+			"email": "invited.student@fit.test",
+		})
+		require.Equal(t, http.StatusOK, wResetReq.Code)
+		require.Equal(t, beforeResetCount+1, len(fakeMailer.resetTokens))
+		resetToken := fakeMailer.resetTokens[len(fakeMailer.resetTokens)-1]
+
+		wResetConfirm := doJSONRequest(t, router, http.MethodPost, "/v1/auth/password-reset/confirm", "", map[string]string{
+			"token":        resetToken,
+			"new_password": "NewInvitePass!2026",
+		})
+		require.Equal(t, http.StatusOK, wResetConfirm.Code, wResetConfirm.Body.String())
+
+		wOldRefresh := doJSONRequest(t, router, http.MethodPost, "/v1/auth/refresh", "", map[string]string{
+			"refresh_token": acceptOut.Session.RefreshToken,
+		})
+		assert.Equal(t, http.StatusUnauthorized, wOldRefresh.Code)
+
+		wResetReuse := doJSONRequest(t, router, http.MethodPost, "/v1/auth/password-reset/confirm", "", map[string]string{
+			"token":        resetToken,
+			"new_password": "AnotherPass!2026",
+		})
+		assert.Equal(t, http.StatusUnauthorized, wResetReuse.Code)
+
+		invitedAccess, _ := loginAndGetTokens(t, router, "invited.student@fit.test", "NewInvitePass!2026")
+
+		// 10.5 Central LGPD (consentimentos, solicitação, exportação segura, audit events e auto-anonimização)
+		wConsent := doJSONRequest(t, router, http.MethodPost, "/v1/privacy/consents", invitedAccess, map[string]any{
+			"purpose":        "MEDIA_UPLOAD",
+			"policy_version": "2026-11",
+			"granted":        true,
+		})
+		require.Equal(t, http.StatusCreated, wConsent.Code, wConsent.Body.String())
+
+		wPrivReq := doJSONRequest(t, router, http.MethodPost, "/v1/privacy/requests", invitedAccess, map[string]string{
+			"request_type": "RECTIFY",
+			"details":      "Atualizar nome de exibição",
+		})
+		require.Equal(t, http.StatusCreated, wPrivReq.Code, wPrivReq.Body.String())
+
+		wExport := doJSONRequest(t, router, http.MethodGet, "/v1/privacy/export", invitedAccess, nil)
+		require.Equal(t, http.StatusOK, wExport.Code, wExport.Body.String())
+		assert.Contains(t, wExport.Body.String(), "invited.student@fit.test")
+		assert.NotContains(t, wExport.Body.String(), "password_hash")
+		assert.NotContains(t, wExport.Body.String(), "cpf_encrypted")
+
+		wAuditStud := doJSONRequest(t, router, http.MethodGet, "/v1/audit-events", invitedAccess, nil)
+		assert.Equal(t, http.StatusForbidden, wAuditStud.Code)
+
+		wAuditTrainer := doJSONRequest(t, router, http.MethodGet, "/v1/audit-events", trainerAToken, nil)
+		require.Equal(t, http.StatusOK, wAuditTrainer.Code)
+		assert.Contains(t, wAuditTrainer.Body.String(), "INVITATION_CREATED")
+
+		wSelfAnon := doJSONRequest(t, router, http.MethodPost, "/v1/privacy/anonymize", invitedAccess, nil)
+		require.Equal(t, http.StatusOK, wSelfAnon.Code, wSelfAnon.Body.String())
+
+		wAfterSelfAnon := doJSONRequest(t, router, http.MethodGet, "/v1/workouts", invitedAccess, nil)
+		assert.Equal(t, http.StatusUnauthorized, wAfterSelfAnon.Code)
+
+		// 10.6 MFA TOTP para Treinador (Setup -> Enable step-1 -> Login sem código 401 mfa_required -> Login step -> Replay bloqueado -> Disable step+1)
+		trainerCEmail := "trainer.c@fit.test"
+		trainerCPass := "TrainerC!2026"
+		_ = seedTrainerUser(t, db, passSvc, trainerCEmail, "Treinador C", trainerCPass)
+		trainerCToken, _ := loginAndGetTokens(t, router, trainerCEmail, trainerCPass)
+
+		wMFASetup := doJSONRequest(t, router, http.MethodPost, "/v1/auth/mfa/setup", trainerCToken, nil)
+		require.Equal(t, http.StatusOK, wMFASetup.Code, wMFASetup.Body.String())
+		var setupOut struct {
+			Secret     string `json:"secret"`
+			OTPAuthURI string `json:"otpauth_uri"`
+		}
+		require.NoError(t, json.Unmarshal(wMFASetup.Body.Bytes(), &setupOut))
+		require.NotEmpty(t, setupOut.Secret)
+
+		totpKey, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(setupOut.Secret)
+		require.NoError(t, err)
+		curStep := time.Now().UTC().Unix() / totp.PeriodSeconds
+		codePrev := totp.GenerateCodeForStep(totpKey, curStep-1)
+		codeCur := totp.GenerateCodeForStep(totpKey, curStep)
+		codeNext := totp.GenerateCodeForStep(totpKey, curStep+1)
+
+		wMFAEnable := doJSONRequest(t, router, http.MethodPost, "/v1/auth/mfa/enable", trainerCToken, map[string]string{
+			"code": codePrev,
+		})
+		require.Equal(t, http.StatusOK, wMFAEnable.Code, wMFAEnable.Body.String())
+
+		wLoginNoCode := doJSONRequest(t, router, http.MethodPost, "/v1/auth/login", "", map[string]string{
+			"email":    trainerCEmail,
+			"password": trainerCPass,
+		})
+		assert.Equal(t, http.StatusUnauthorized, wLoginNoCode.Code)
+		assert.Contains(t, wLoginNoCode.Body.String(), `"mfa_required":true`)
+
+		wLoginWithCode := doJSONRequest(t, router, http.MethodPost, "/v1/auth/login", "", map[string]string{
+			"email":     trainerCEmail,
+			"password":  trainerCPass,
+			"totp_code": codeCur,
+		})
+		require.Equal(t, http.StatusOK, wLoginWithCode.Code, wLoginWithCode.Body.String())
+
+		wLoginReplay := doJSONRequest(t, router, http.MethodPost, "/v1/auth/login", "", map[string]string{
+			"email":     trainerCEmail,
+			"password":  trainerCPass,
+			"totp_code": codeCur,
+		})
+		assert.Equal(t, http.StatusUnauthorized, wLoginReplay.Code)
+
+		wMFADisable := doJSONRequest(t, router, http.MethodPost, "/v1/auth/mfa/disable", trainerCToken, map[string]string{
+			"password": trainerCPass,
+			"code":     codeNext,
+		})
+		require.Equal(t, http.StatusOK, wMFADisable.Code, wMFADisable.Body.String())
+
+		wMFAStatus := doJSONRequest(t, router, http.MethodGet, "/v1/auth/mfa/status", trainerCToken, nil)
+		require.Equal(t, http.StatusOK, wMFAStatus.Code)
+		assert.Contains(t, wMFAStatus.Body.String(), `"enabled":false`)
+	})
 }

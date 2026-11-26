@@ -241,5 +241,8 @@ class DioClient {
   bool _isAuthLifecyclePath(String path) =>
       path.endsWith('/auth/login') ||
       path.endsWith('/auth/refresh') ||
-      path.endsWith('/auth/logout');
+      path.endsWith('/auth/logout') ||
+      path.endsWith('/auth/invitations/accept') ||
+      path.endsWith('/auth/password-reset/request') ||
+      path.endsWith('/auth/password-reset/confirm');
 }

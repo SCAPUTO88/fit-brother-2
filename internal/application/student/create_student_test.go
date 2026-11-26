@@ -152,7 +152,10 @@ func TestCreateStudentUseCase(t *testing.T) {
 			if s.GetCleanCPF() != "" {
 				return false
 			}
-			return s.TrainerID != nil && *s.TrainerID == trainerID && s.CPFHash != "" && s.CPFEncrypted != "" && s.CPFEncrypted != "12345678901"
+			return s.TrainerID != nil &&
+				*s.TrainerID == trainerID &&
+				s.CPFHash != nil && *s.CPFHash != "" &&
+				s.CPFEncrypted != nil && *s.CPFEncrypted != "" && *s.CPFEncrypted != "12345678901"
 		})).Return(nil)
 
 		out, err := sut.Execute(ctx, input)
@@ -164,6 +167,33 @@ func TestCreateStudentUseCase(t *testing.T) {
 
 		mockURepo.AssertExpectations(t)
 		mockSRepo.AssertExpectations(t)
+	})
+
+	t.Run("Deve criar Aluno sem CPF conforme ADR-006", func(t *testing.T) {
+		mockURepo := new(MockUserRepo)
+		mockSRepo := new(MockStudentRepo)
+		txMgr := &MockTxManager{}
+
+		sut := student.NewCreateStudentUseCase(mockURepo, mockSRepo, txMgr, passSvc, encryptor, hashGen)
+		trainerID := uuid.New()
+
+		input := student.CreateStudentInput{
+			TrainerID: trainerID,
+			Email:     "semcpf@fit.com",
+			FullName:  "Maria Sem CPF",
+			Password:  "senha_segura_123",
+		}
+
+		mockURepo.On("GetByEmail", ctx, "semcpf@fit.com").Return((*domainU.User)(nil), nil)
+		mockURepo.On("Create", ctx, mock.AnythingOfType("*user.User")).Return(nil)
+		mockSRepo.On("Create", ctx, mock.MatchedBy(func(s *domainS.Student) bool {
+			return s.CPFHash == nil && s.CPFEncrypted == nil
+		})).Return(nil)
+
+		out, err := sut.Execute(ctx, input)
+		require.NoError(t, err)
+		assert.Equal(t, "semcpf@fit.com", out.Email)
+		mockSRepo.AssertNotCalled(t, "GetByCPFHash", mock.Anything, mock.Anything)
 	})
 
 	t.Run("Deve falhar com ErrConflict se Email ja existe", func(t *testing.T) {

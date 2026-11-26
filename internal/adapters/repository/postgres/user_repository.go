@@ -150,3 +150,92 @@ func (r *UserRepository) RevokeAllByUserID(ctx context.Context, userID uuid.UUID
 	_, err := getExecutor(ctx, r.db).ExecContext(ctx, query, userID)
 	return err
 }
+
+func (r *UserRepository) CreatePasswordResetToken(ctx context.Context, token *user.PasswordResetToken) error {
+	query := `
+		INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, created_at)
+		VALUES ($1, $2, $3, $4, $5)
+	`
+	_, err := getExecutor(ctx, r.db).ExecContext(ctx, query,
+		token.ID, token.UserID, token.TokenHash, token.ExpiresAt, token.CreatedAt,
+	)
+	return err
+}
+
+func (r *UserRepository) GetPasswordResetTokenByHash(ctx context.Context, tokenHash string) (*user.PasswordResetToken, error) {
+	query := `
+		SELECT id, user_id, token_hash, expires_at, used_at, created_at
+		FROM password_reset_tokens
+		WHERE token_hash = $1
+	`
+	if txFromContext(ctx) != nil {
+		query += ` FOR UPDATE`
+	}
+	var token user.PasswordResetToken
+	err := getExecutor(ctx, r.db).GetContext(ctx, &token, query, tokenHash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &token, nil
+}
+
+func (r *UserRepository) MarkPasswordResetTokenUsed(ctx context.Context, id uuid.UUID) error {
+	query := `UPDATE password_reset_tokens SET used_at = NOW() WHERE id = $1`
+	_, err := getExecutor(ctx, r.db).ExecContext(ctx, query, id)
+	return err
+}
+
+func (r *UserRepository) InvalidatePasswordResetTokensByUser(ctx context.Context, userID uuid.UUID) error {
+	query := `UPDATE password_reset_tokens SET used_at = NOW() WHERE user_id = $1 AND used_at IS NULL`
+	_, err := getExecutor(ctx, r.db).ExecContext(ctx, query, userID)
+	return err
+}
+
+func (r *UserRepository) GetMFA(ctx context.Context, userID uuid.UUID) (*user.UserMFA, error) {
+	query := `
+		SELECT user_id, secret_encrypted, enabled, last_used_step, verified_at, created_at, updated_at
+		FROM user_mfa
+		WHERE user_id = $1
+	`
+	var mfa user.UserMFA
+	err := getExecutor(ctx, r.db).GetContext(ctx, &mfa, query, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &mfa, nil
+}
+
+func (r *UserRepository) UpsertMFA(ctx context.Context, mfa *user.UserMFA) error {
+	query := `
+		INSERT INTO user_mfa (user_id, secret_encrypted, enabled, last_used_step, verified_at, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (user_id) DO UPDATE
+		SET secret_encrypted = EXCLUDED.secret_encrypted,
+		    enabled = EXCLUDED.enabled,
+		    last_used_step = EXCLUDED.last_used_step,
+		    verified_at = EXCLUDED.verified_at,
+		    updated_at = NOW()
+	`
+	_, err := getExecutor(ctx, r.db).ExecContext(ctx, query,
+		mfa.UserID, mfa.SecretEncrypted, mfa.Enabled, mfa.LastUsedStep, mfa.VerifiedAt, mfa.CreatedAt, mfa.UpdatedAt,
+	)
+	return err
+}
+
+func (r *UserRepository) UpdateMFALastUsedStep(ctx context.Context, userID uuid.UUID, step int64) error {
+	query := `UPDATE user_mfa SET last_used_step = $1, updated_at = NOW() WHERE user_id = $2`
+	_, err := getExecutor(ctx, r.db).ExecContext(ctx, query, step, userID)
+	return err
+}
+
+func (r *UserRepository) DisableMFA(ctx context.Context, userID uuid.UUID) error {
+	query := `DELETE FROM user_mfa WHERE user_id = $1`
+	_, err := getExecutor(ctx, r.db).ExecContext(ctx, query, userID)
+	return err
+}

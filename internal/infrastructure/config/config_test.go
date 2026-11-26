@@ -46,6 +46,9 @@ func TestLoadSucceedsWithoutRedisAndWithoutR2InDevelopment(t *testing.T) {
 	assert.Equal(t, 5*time.Minute, cfg.Storage.SignedURLTTL)
 	assert.Equal(t, 20, cfg.RateLimit.AuthMaxRequests)
 	assert.Equal(t, time.Minute, cfg.RateLimit.AuthWindow)
+	assert.False(t, cfg.SMTP.Enabled())
+	assert.Equal(t, 587, cfg.SMTP.Port)
+	assert.True(t, cfg.SMTP.StartTLS)
 }
 
 func TestLoadDefaultsToDisabledStorageInProductionWhenR2Unset(t *testing.T) {

@@ -33,12 +33,14 @@ class AuthState {
   final String? error;
   final bool isLoggedIn;
   final String? role;
+  final bool mfaRequired;
 
   const AuthState({
     this.isLoading = false,
     this.error,
     this.isLoggedIn = false,
     this.role,
+    this.mfaRequired = false,
   });
 
   AuthState copyWith({
@@ -46,12 +48,14 @@ class AuthState {
     String? error,
     bool? isLoggedIn,
     String? role,
+    bool? mfaRequired,
   }) {
     return AuthState(
       isLoading: isLoading ?? this.isLoading,
       error: error,
       isLoggedIn: isLoggedIn ?? this.isLoggedIn,
       role: role ?? this.role,
+      mfaRequired: mfaRequired ?? this.mfaRequired,
     );
   }
 }
@@ -64,13 +68,21 @@ class AuthNotifier extends Notifier<AuthState> {
   Dio get _dio => _client.dio;
   TokenStorage get _storage => ref.read(tokenStorageProvider);
 
-  Future<void> login(String email, String password) async {
+  Future<void> login(String email, String password, {String? totpCode}) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final useCookie = _client.useCookieSession;
+      final payload = <String, dynamic>{
+        'email': email,
+        'password': password,
+      };
+      if (totpCode != null && totpCode.trim().isNotEmpty) {
+        payload['totp_code'] = totpCode.trim();
+      }
+
       final response = await _dio.post<dynamic>(
         '/auth/login',
-        data: {'email': email, 'password': password},
+        data: payload,
         options: useCookie
             ? Options(headers: {DioClient.sessionModeHeaderName: 'cookie'})
             : null,
@@ -79,35 +91,39 @@ class AuthNotifier extends Notifier<AuthState> {
       final data = response.data is Map
           ? Map<String, dynamic>.from(response.data as Map)
           : <String, dynamic>{};
-      final role = data['role'] as String?;
-      final sessionMode = data['session_mode'] as String?;
+      await _applySessionPayload(data);
+    } on DioException catch (e) {
+      final body = e.response?.data is Map
+          ? Map<String, dynamic>.from(e.response!.data as Map)
+          : <String, dynamic>{};
+      final message = body['error'] as String? ?? 'Erro de conexão';
+      final needsMFA = body['mfa_required'] == true || state.mfaRequired;
+      state = state.copyWith(
+        isLoading: false,
+        isLoggedIn: false,
+        error: message,
+        mfaRequired: needsMFA,
+      );
+    } catch (_) {
+      state = state.copyWith(
+        isLoading: false,
+        isLoggedIn: false,
+        error: 'Ocorreu um erro inesperado.',
+      );
+    }
+  }
 
-      if (useCookie) {
-        if (sessionMode != 'cookie' &&
-            (role == null || role.isEmpty)) {
-          state = const AuthState(
-            isLoading: false,
-            isLoggedIn: false,
-            error: 'Resposta de autenticação inválida do servidor.',
-          );
-          return;
-        }
+  Future<void> applySessionFromPayload(Map<String, dynamic> data) async {
+    await _applySessionPayload(data);
+  }
 
-        state = AuthState(
-          isLoading: false,
-          isLoggedIn: true,
-          role: role,
-        );
-        return;
-      }
+  Future<void> _applySessionPayload(Map<String, dynamic> data) async {
+    final useCookie = _client.useCookieSession;
+    final role = data['role'] as String?;
+    final sessionMode = data['session_mode'] as String?;
 
-      final accessToken = data['access_token'] as String?;
-      final refreshToken = data['refresh_token'] as String?;
-
-      if (accessToken == null ||
-          accessToken.isEmpty ||
-          refreshToken == null ||
-          refreshToken.isEmpty) {
+    if (useCookie) {
+      if (sessionMode != 'cookie' && (role == null || role.isEmpty)) {
         state = const AuthState(
           isLoading: false,
           isLoggedIn: false,
@@ -116,28 +132,42 @@ class AuthNotifier extends Notifier<AuthState> {
         return;
       }
 
-      await _storage.write(key: 'access_token', value: accessToken);
-      await _storage.write(key: 'refresh_token', value: refreshToken);
-      if (role != null && role.isNotEmpty) {
-        await _storage.write(key: 'user_role', value: role);
-      }
-
       state = AuthState(
         isLoading: false,
         isLoggedIn: true,
         role: role,
+        mfaRequired: false,
       );
-    } on DioException catch (e) {
-      final message = (e.response?.data as Map?)?['error'] as String? ??
-          'Erro de conexão';
-      state = state.copyWith(isLoading: false, isLoggedIn: false, error: message);
-    } catch (_) {
-      state = state.copyWith(
+      return;
+    }
+
+    final accessToken = data['access_token'] as String?;
+    final refreshToken = data['refresh_token'] as String?;
+
+    if (accessToken == null ||
+        accessToken.isEmpty ||
+        refreshToken == null ||
+        refreshToken.isEmpty) {
+      state = const AuthState(
         isLoading: false,
         isLoggedIn: false,
-        error: 'Ocorreu um erro inesperado.',
+        error: 'Resposta de autenticação inválida do servidor.',
       );
+      return;
     }
+
+    await _storage.write(key: 'access_token', value: accessToken);
+    await _storage.write(key: 'refresh_token', value: refreshToken);
+    if (role != null && role.isNotEmpty) {
+      await _storage.write(key: 'user_role', value: role);
+    }
+
+    state = AuthState(
+      isLoading: false,
+      isLoggedIn: true,
+      role: role,
+      mfaRequired: false,
+    );
   }
 
   Future<void> logout() async {
@@ -158,6 +188,13 @@ class AuthNotifier extends Notifier<AuthState> {
       }
     } catch (_) {}
 
+    await _storage.delete(key: 'access_token');
+    await _storage.delete(key: 'refresh_token');
+    await _storage.delete(key: 'user_role');
+    state = const AuthState();
+  }
+
+  Future<void> clearLocalSession() async {
     await _storage.delete(key: 'access_token');
     await _storage.delete(key: 'refresh_token');
     await _storage.delete(key: 'user_role');

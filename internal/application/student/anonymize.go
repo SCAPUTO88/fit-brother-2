@@ -9,15 +9,19 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/SCAPUTO88/fit-brother/internal/domain/errs"
+	domainOrg "github.com/SCAPUTO88/fit-brother/internal/domain/organization"
+	domainPrivacy "github.com/SCAPUTO88/fit-brother/internal/domain/privacy"
 	domainS "github.com/SCAPUTO88/fit-brother/internal/domain/student"
 	"github.com/SCAPUTO88/fit-brother/internal/domain/tx"
 	domainU "github.com/SCAPUTO88/fit-brother/internal/domain/user"
 )
 
 type AnonymizeStudentUseCase struct {
-	userRepo  domainU.Repository
-	studRepo  domainS.Repository
-	txManager tx.Manager
+	userRepo    domainU.Repository
+	studRepo    domainS.Repository
+	orgRepo     domainOrg.Repository
+	privacyRepo domainPrivacy.Repository
+	txManager   tx.Manager
 }
 
 func NewAnonymizeStudentUseCase(ur domainU.Repository, sr domainS.Repository, txManager tx.Manager) *AnonymizeStudentUseCase {
@@ -26,6 +30,15 @@ func NewAnonymizeStudentUseCase(ur domainU.Repository, sr domainS.Repository, tx
 		studRepo:  sr,
 		txManager: txManager,
 	}
+}
+
+func (c *AnonymizeStudentUseCase) WithMultiTenantAndPrivacy(
+	orgRepo domainOrg.Repository,
+	privacyRepo domainPrivacy.Repository,
+) *AnonymizeStudentUseCase {
+	c.orgRepo = orgRepo
+	c.privacyRepo = privacyRepo
+	return c
 }
 
 func (c *AnonymizeStudentUseCase) Execute(ctx context.Context, studentID, requesterID uuid.UUID, role string) error {
@@ -38,7 +51,7 @@ func (c *AnonymizeStudentUseCase) Execute(ctx context.Context, studentID, reques
 			return fmt.Errorf("%w: aluno não encontrado", errs.ErrNotFound)
 		}
 
-		if err := authorizeStudentAccess(stud, requesterID, role); err != nil {
+		if err := authorizeStudentAccessWithOrg(execCtx, c.orgRepo, stud, requesterID, role); err != nil {
 			return err
 		}
 
@@ -48,6 +61,12 @@ func (c *AnonymizeStudentUseCase) Execute(ctx context.Context, studentID, reques
 		}
 		if usr == nil {
 			return fmt.Errorf("%w: perfil base corrompido ou inativo", errs.ErrNotFound)
+		}
+
+		if c.orgRepo != nil {
+			if err := c.orgRepo.EndAllByStudent(execCtx, stud.ID); err != nil {
+				return err
+			}
 		}
 
 		now := time.Now().UTC()
@@ -63,6 +82,23 @@ func (c *AnonymizeStudentUseCase) Execute(ctx context.Context, studentID, reques
 
 		if err := c.userRepo.RevokeAllByUserID(execCtx, usr.ID); err != nil {
 			return err
+		}
+
+		if c.privacyRepo != nil {
+			if err := c.privacyRepo.CompletePrivacyRequestsByUserAndType(execCtx, usr.ID, domainPrivacy.RequestAnonymize); err != nil {
+				return err
+			}
+			actorID := requesterID
+			targetID := usr.ID
+			_ = c.privacyRepo.RecordAuditEvent(execCtx, &domainPrivacy.AuditEvent{
+				ID:           uuid.New(),
+				ActorUserID:  &actorID,
+				Action:       "STUDENT_ANONYMIZED",
+				TargetType:   "user",
+				TargetID:     &targetID,
+				MetadataJSON: "{}",
+				CreatedAt:    now,
+			})
 		}
 
 		return c.studRepo.Delete(execCtx, stud.ID)
