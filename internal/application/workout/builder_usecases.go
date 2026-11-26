@@ -571,7 +571,7 @@ func (u *BuilderUseCase) GetAssignment(ctx context.Context, requesterID uuid.UUI
 		if err != nil {
 			return nil, errors.New("falha ao validar organização")
 		}
-		if mem == nil || mem.Status != domainOrg.MemberStatusActive {
+		if mem == nil || mem.Status != domainOrg.MembershipActive {
 			return nil, fmt.Errorf("%w: acesso negado", errs.ErrForbidden)
 		}
 	default:
@@ -603,7 +603,7 @@ func (u *BuilderUseCase) UpdateAssignmentStatus(ctx context.Context, requesterID
 	if err != nil {
 		return nil, errors.New("falha ao verificar vínculo organizacional")
 	}
-	if mem == nil || mem.Status != domainOrg.MemberStatusActive {
+	if mem == nil || mem.Status != domainOrg.MembershipActive {
 		return nil, fmt.Errorf("%w: você não possui permissão sobre esta atribuição", errs.ErrForbidden)
 	}
 
@@ -744,7 +744,7 @@ func (u *BuilderUseCase) loadAuthorizedTemplate(ctx context.Context, trainerUser
 	if err != nil {
 		return nil, errors.New("falha ao validar organização do template")
 	}
-	if mem == nil || mem.Status != domainOrg.MemberStatusActive {
+	if mem == nil || mem.Status != domainOrg.MembershipActive {
 		return nil, fmt.Errorf("%w: você não possui permissão sobre este template", errs.ErrForbidden)
 	}
 	return tpl, nil
@@ -760,7 +760,7 @@ func (u *BuilderUseCase) resolveTrainerOrg(ctx context.Context, trainerUserID uu
 		if err != nil {
 			return uuid.Nil, errors.New("falha ao validar organização")
 		}
-		if mem == nil || mem.Status != domainOrg.MemberStatusActive {
+		if mem == nil || mem.Status != domainOrg.MembershipActive {
 			return uuid.Nil, fmt.Errorf("%w: você não é membro ativo desta organização", errs.ErrForbidden)
 		}
 		return orgID, nil

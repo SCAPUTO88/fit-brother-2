@@ -205,7 +205,7 @@ func (m *mockBuilderOrgPort) EnsureTrainerDefaultOrg(_ context.Context, trainerU
 
 func (m *mockBuilderOrgPort) GetMembership(_ context.Context, orgID, userID uuid.UUID) (*domainOrg.Membership, error) {
 	if assigned, ok := m.orgs[userID]; ok && assigned == orgID {
-		return &domainOrg.Membership{OrganizationID: orgID, UserID: userID, Role: "OWNER", Status: domainOrg.MemberStatusActive}, nil
+		return &domainOrg.Membership{OrganizationID: orgID, UserID: userID, Role: "OWNER", Status: domainOrg.MembershipActive}, nil
 	}
 	return nil, nil
 }
