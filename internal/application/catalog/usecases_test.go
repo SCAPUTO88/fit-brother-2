@@ -135,13 +135,13 @@ func (m *memCatalogRepo) SearchExercises(_ context.Context, filter domainCatalog
 				continue
 			}
 		}
-		if filter.Muscle != "" && strings.ToLower(ex.PrimaryMuscle) != strings.ToLower(filter.Muscle) {
+		if filter.Muscle != "" && !strings.EqualFold(ex.PrimaryMuscle, filter.Muscle) {
 			continue
 		}
-		if filter.Equipment != "" && strings.ToLower(ex.Equipment) != strings.ToLower(filter.Equipment) {
+		if filter.Equipment != "" && !strings.EqualFold(ex.Equipment, filter.Equipment) {
 			continue
 		}
-		if filter.Category != "" && strings.ToLower(ex.Category) != strings.ToLower(filter.Category) {
+		if filter.Category != "" && !strings.EqualFold(ex.Category, filter.Category) {
 			continue
 		}
 		cp := *ex
