@@ -14,10 +14,10 @@ import (
 	"github.com/SCAPUTO88/fit-brother/internal/adapters/storage"
 	appvideo "github.com/SCAPUTO88/fit-brother/internal/application/video"
 	"github.com/SCAPUTO88/fit-brother/internal/domain/errs"
+	domainStorage "github.com/SCAPUTO88/fit-brother/internal/domain/storage"
 	domainS "github.com/SCAPUTO88/fit-brother/internal/domain/student"
 	domainU "github.com/SCAPUTO88/fit-brother/internal/domain/user"
 	domainW "github.com/SCAPUTO88/fit-brother/internal/domain/workout"
-	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/config"
 )
 
 type fakeVideoRepo struct {
@@ -71,21 +71,21 @@ func (r *fakeVideoRepo) Delete(_ context.Context, id uuid.UUID) error {
 }
 
 type fakeStorage struct {
-	objects map[string]storage.ObjectMetadata
+	objects map[string]domainStorage.ObjectMetadata
 }
 
 func newFakeStorage() *fakeStorage {
-	return &fakeStorage{objects: make(map[string]storage.ObjectMetadata)}
+	return &fakeStorage{objects: make(map[string]domainStorage.ObjectMetadata)}
 }
 
 func (s *fakeStorage) GeneratePresignedUploadURL(_ context.Context, key, _ string, _ time.Duration) (string, error) {
 	return "https://r2.example/upload/" + key, nil
 }
 
-func (s *fakeStorage) HeadObject(_ context.Context, key string) (*storage.ObjectMetadata, error) {
+func (s *fakeStorage) HeadObject(_ context.Context, key string) (*domainStorage.ObjectMetadata, error) {
 	meta, ok := s.objects[key]
 	if !ok {
-		return nil, storage.ErrObjectNotFound
+		return nil, domainStorage.ErrObjectNotFound
 	}
 	return &meta, nil
 }
@@ -208,12 +208,12 @@ func TestVideoHardeningUseCases(t *testing.T) {
 			studentUser2: {ID: student2ID, UserID: studentUser2, TrainerID: &trainerB},
 		},
 	}
-	cfg := &config.R2Config{SignedURLTTL: 5 * time.Minute}
+	ttl := 5 * time.Minute
 
 	t.Run("RequestUploadURL bloqueia outro treinador, valida MIME, sanitiza chave e cria PENDING", func(t *testing.T) {
 		vRepo := newFakeVideoRepo()
 		store := newFakeStorage()
-		uc := appvideo.NewRequestUploadURLUseCase(vRepo, wRepo, store, cfg)
+		uc := appvideo.NewRequestUploadURLUseCase(vRepo, wRepo, store, ttl)
 
 		_, err := uc.Execute(ctx, trainerB, appvideo.RequestUploadURLInput{
 			ExerciseID: exerciseID.String(),
@@ -251,7 +251,7 @@ func TestVideoHardeningUseCases(t *testing.T) {
 	t.Run("ConfirmUpload exige objeto real no storage dentro do limite de 50MB", func(t *testing.T) {
 		vRepo := newFakeVideoRepo()
 		store := newFakeStorage()
-		reqUC := appvideo.NewRequestUploadURLUseCase(vRepo, wRepo, store, cfg)
+		reqUC := appvideo.NewRequestUploadURLUseCase(vRepo, wRepo, store, ttl)
 		confUC := appvideo.NewConfirmUploadUseCase(vRepo, wRepo, store)
 
 		reqOut, err := reqUC.Execute(ctx, trainerA, appvideo.RequestUploadURLInput{
@@ -270,7 +270,7 @@ func TestVideoHardeningUseCases(t *testing.T) {
 		assert.True(t, errors.Is(err, errs.ErrInvalidInput))
 
 		// Arquivo maior que 50MB
-		store.objects[reqOut.R2Key] = storage.ObjectMetadata{
+		store.objects[reqOut.R2Key] = domainStorage.ObjectMetadata{
 			SizeBytes: appvideo.MaxVideoSizeBytes + 1,
 			MimeType:  "video/mp4",
 		}
@@ -282,7 +282,7 @@ func TestVideoHardeningUseCases(t *testing.T) {
 		assert.True(t, errors.Is(err, errs.ErrInvalidInput))
 
 		// Arquivo valido no storage -> confirma usando tamanho real do HeadObject
-		store.objects[reqOut.R2Key] = storage.ObjectMetadata{
+		store.objects[reqOut.R2Key] = domainStorage.ObjectMetadata{
 			SizeBytes: 2048,
 			MimeType:  "video/mp4",
 		}
@@ -304,9 +304,9 @@ func TestVideoHardeningUseCases(t *testing.T) {
 	t.Run("GetSignedURL valida ownership de treinador e aluno", func(t *testing.T) {
 		vRepo := newFakeVideoRepo()
 		store := newFakeStorage()
-		reqUC := appvideo.NewRequestUploadURLUseCase(vRepo, wRepo, store, cfg)
+		reqUC := appvideo.NewRequestUploadURLUseCase(vRepo, wRepo, store, ttl)
 		confUC := appvideo.NewConfirmUploadUseCase(vRepo, wRepo, store)
-		getUC := appvideo.NewGetSignedURLUseCase(vRepo, wRepo, sRepo, store, cfg)
+		getUC := appvideo.NewGetSignedURLUseCase(vRepo, wRepo, sRepo, store, ttl)
 
 		reqOut, err := reqUC.Execute(ctx, trainerA, appvideo.RequestUploadURLInput{
 			ExerciseID: exerciseID.String(),
@@ -320,7 +320,7 @@ func TestVideoHardeningUseCases(t *testing.T) {
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, errs.ErrNotFound))
 
-		store.objects[reqOut.R2Key] = storage.ObjectMetadata{SizeBytes: 1024, MimeType: "video/mp4"}
+		store.objects[reqOut.R2Key] = domainStorage.ObjectMetadata{SizeBytes: 1024, MimeType: "video/mp4"}
 		_, err = confUC.Execute(ctx, trainerA, appvideo.ConfirmUploadInput{
 			ExerciseID: exerciseID.String(),
 			R2Key:      reqOut.R2Key,
@@ -339,5 +339,19 @@ func TestVideoHardeningUseCases(t *testing.T) {
 		_, err = getUC.Execute(ctx, exerciseID, trainerB, domainU.RoleTrainer)
 		require.Error(t, err)
 		assert.True(t, errors.Is(err, errs.ErrForbidden))
+	})
+
+	t.Run("Storage disabled retorna ErrServiceUnavailable", func(t *testing.T) {
+		vRepo := newFakeVideoRepo()
+		disabled := storage.NewDisabledStorage()
+		uc := appvideo.NewRequestUploadURLUseCase(vRepo, wRepo, disabled, ttl)
+
+		_, err := uc.Execute(ctx, trainerA, appvideo.RequestUploadURLInput{
+			ExerciseID: exerciseID.String(),
+			Filename:   "treino.mp4",
+			MimeType:   "video/mp4",
+		})
+		require.Error(t, err)
+		assert.True(t, errors.Is(err, errs.ErrServiceUnavailable))
 	})
 }

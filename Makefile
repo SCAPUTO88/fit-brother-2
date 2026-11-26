@@ -35,9 +35,9 @@ format:
 pre-push: format test
 	@echo "Tudo OK! Pode fazer o push com seguranca."
 
-# Docker comandos (Subir infra local PostgreSQL e Redis)
+# Docker comandos (Subir infra local PostgreSQL)
 up:
-	@echo "Subindo containers (Banco e Cache)..."
+	@echo "Subindo containers (PostgreSQL local)..."
 	docker-compose -f docker/docker-compose.yml up -d
 
 down:

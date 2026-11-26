@@ -17,11 +17,11 @@ type TokenOutput struct {
 
 // Entrada para o Refresh Token
 type RefreshInput struct {
-	RefreshToken string `json:"refresh_token" binding:"required"`
+	RefreshToken string `json:"refresh_token"`
 	ClientIP     string `json:"-"`
 }
 
 // Entrada para Logout
 type LogoutInput struct {
-	RefreshToken string `json:"refresh_token" binding:"required"`
+	RefreshToken string `json:"refresh_token"`
 }

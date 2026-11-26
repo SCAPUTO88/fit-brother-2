@@ -6,8 +6,16 @@ on:
   pull_request:
     branches: [main, develop]
 
+permissions:
+  contents: read
+
 env:
   GO_VERSION: "1.26.11"
+  GOLANGCI_LINT_VERSION: "v1.64.8"
+  GOVULNCHECK_VERSION: "v1.2.0"
+  GITLEAKS_VERSION: "8.30.1"
+  OSV_SCANNER_VERSION: "2.7.1"
+  SEMGREP_VERSION: "1.186.0"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -32,7 +40,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
           install-mode: goinstall
           args: --timeout=5m
 
@@ -60,13 +68,69 @@ jobs:
           cache: true
 
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        run: go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
 
       - name: Run govulncheck
         run: govulncheck ./...
 
   # ----------------------------------------------------------------------------
-  # Test — testes unitários e de integração Go + PostgreSQL + Redis
+  # DevSecOps — Gitleaks, Semgrep SAST, OSV-Scanner, Trivy e SBOM CycloneDX
+  # ----------------------------------------------------------------------------
+  devsecops:
+    name: DevSecOps (Secrets, SAST, SCA & SBOM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Gitleaks Secret Scan
+        run: |
+          curl -sSLf "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          /tmp/gitleaks detect --source . --redact --verbose
+
+      - name: Setup Python for Semgrep
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Semgrep SAST (Go & Secrets)
+        run: |
+          python3 -m pip install --no-cache-dir "semgrep==${SEMGREP_VERSION}"
+          semgrep scan --config p/golang --config p/secrets --error --metrics=off --exclude fit_brother_app/build .
+
+      - name: OSV-Scanner SCA (Go & Dart)
+        run: |
+          curl -sSLf "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64" -o /tmp/osv-scanner
+          chmod +x /tmp/osv-scanner
+          /tmp/osv-scanner scan source --lockfile=go.mod --lockfile=fit_brother_app/pubspec.lock
+
+      - name: Generate CycloneDX SBOM (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: cyclonedx
+          output: sbom.cdx.json
+
+      - name: Upload CycloneDX SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: fit-brother-sbom-cdx
+          path: sbom.cdx.json
+          retention-days: 14
+
+      - name: Trivy Vulnerability Scan (Filesystem)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+  # ----------------------------------------------------------------------------
+  # Test — testes unitários e de integração Go + PostgreSQL (sem Redis/R2)
   # ----------------------------------------------------------------------------
   test:
     name: Test (Go + Postgres)
@@ -87,16 +151,6 @@ jobs:
         ports:
           - 5432:5432
 
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
-
     steps:
       - uses: actions/checkout@v4
 
@@ -112,17 +166,14 @@ jobs:
       - name: Run integration tests
         env:
           DATABASE_URL: postgres://fitbrother:secret@localhost:5432/fitbrother_test?sslmode=disable
-          REDIS_URL: redis://localhost:6379
           APP_ENV: test
-          AES_KEY: dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleTA=
-          CPF_HMAC_SECRET: test-hmac-secret-for-ci-only-32chars!
-          PASSWORD_PEPPER: test-pepper-for-ci-only-32chars!!
-          R2_ACCOUNT_ID: test
-          R2_ACCESS_KEY_ID: test
-          R2_SECRET_ACCESS_KEY: test
-          R2_BUCKET: test
-          R2_PUBLIC_URL: http://localhost
-        run: go test -v -race -count=1 -timeout 3m -tags integration ./tests/integration/...
+          STORAGE_DRIVER: local
+          STORAGE_LOCAL_DIR: /tmp/fitbrother-test-storage
+        run: |
+          export AES_KEY="$(openssl rand -base64 32)"
+          export CPF_HMAC_SECRET="$(openssl rand -base64 32)"
+          export PASSWORD_PEPPER="$(openssl rand -base64 32)"
+          go test -v -race -count=1 -timeout 3m -tags integration ./tests/integration/...
 
       - name: Coverage report
         run: |
@@ -165,7 +216,7 @@ jobs:
   build:
     name: Build (Go & Docker)
     runs-on: ubuntu-latest
-    needs: [lint, test, flutter]
+    needs: [lint, security, devsecops, test, flutter]
     steps:
       - uses: actions/checkout@v4
 

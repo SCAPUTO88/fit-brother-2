@@ -1,10 +1,12 @@
 # Software Architecture Document (SAD)
 
+> **Aviso de atualização (Fases 0–2):** Este documento registra o contexto inicial da arquitetura. Decisões envolvendo **Google Cloud Run** e **Redis obrigatório** foram **revogadas/substituídas** pelos documentos oficiais atuais: [`docs/02-architecture/target-architecture.md`](../02-architecture/target-architecture.md), [`ADR-004`](../adr/ADR-004-redis-removal-and-rate-limiting.md), [`ADR-005`](../adr/ADR-005-media-storage-and-exercise-library.md), [`ADR-007`](../adr/ADR-007-target-infrastructure-gcp-exit.md) e [`ADR-008`](../adr/ADR-008-web-session-security-bff-cookies.md).
+
 ## Fit Brother - Personal Fitness Platform
 
-**Versao:** 2.0  
+**Versao:** 2.0 (Legado — ver `target-architecture.md`)  
 **Data:** 2026-09-13  
-**Status:** Arquitetura alvo para MVP pessoal em free-tier
+**Status:** Substituído parcialmente pelas decisões da Fase 0–2
 
 ---
 

@@ -10,12 +10,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/SCAPUTO88/fit-brother/internal/adapters/storage"
 	"github.com/SCAPUTO88/fit-brother/internal/domain/errs"
+	domainStorage "github.com/SCAPUTO88/fit-brother/internal/domain/storage"
 	domainS "github.com/SCAPUTO88/fit-brother/internal/domain/student"
 	"github.com/SCAPUTO88/fit-brother/internal/domain/user"
 	domainW "github.com/SCAPUTO88/fit-brother/internal/domain/workout"
-	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/config"
 )
 
 const (
@@ -31,12 +30,7 @@ var allowedVideoMimeExtensions = map[string]string{
 	"video/quicktime": ".mov",
 }
 
-type StorageClient interface {
-	GeneratePresignedUploadURL(ctx context.Context, key string, contentType string, ttl time.Duration) (string, error)
-	HeadObject(ctx context.Context, key string) (*storage.ObjectMetadata, error)
-	GenerateSignedURL(ctx context.Context, key string, ttl time.Duration) (string, error)
-	DeleteObject(ctx context.Context, key string) error
-}
+type StorageClient = domainStorage.Port
 
 type VideoRecord struct {
 	ID         uuid.UUID
@@ -59,23 +53,23 @@ type Repository interface {
 }
 
 type RequestUploadURLUseCase struct {
-	repo        Repository
-	workoutRepo domainW.Repository
-	storage     StorageClient
-	cfg         *config.R2Config
+	repo         Repository
+	workoutRepo  domainW.Repository
+	storage      domainStorage.Port
+	signedURLTTL time.Duration
 }
 
 func NewRequestUploadURLUseCase(
 	repo Repository,
 	workoutRepo domainW.Repository,
-	s StorageClient,
-	cfg *config.R2Config,
+	s domainStorage.Port,
+	signedURLTTL time.Duration,
 ) *RequestUploadURLUseCase {
 	return &RequestUploadURLUseCase{
-		repo:        repo,
-		workoutRepo: workoutRepo,
-		storage:     s,
-		cfg:         cfg,
+		repo:         repo,
+		workoutRepo:  workoutRepo,
+		storage:      s,
+		signedURLTTL: signedURLTTL,
 	}
 }
 
@@ -102,13 +96,16 @@ func (uc *RequestUploadURLUseCase) Execute(ctx context.Context, uploaderID uuid.
 
 	r2Key := fmt.Sprintf("exercises/%s/%s%s", exerciseID, uuid.NewString(), ext)
 
-	ttl := uc.cfg.SignedURLTTL
-	if ttl == 0 {
+	ttl := uc.signedURLTTL
+	if ttl <= 0 {
 		ttl = 10 * time.Minute
 	}
 
 	presignedURL, err := uc.storage.GeneratePresignedUploadURL(ctx, r2Key, mimeType, ttl)
 	if err != nil {
+		if errors.Is(err, domainStorage.ErrStorageDisabled) {
+			return nil, fmt.Errorf("%w: módulo de vídeo desabilitado neste ambiente", errs.ErrServiceUnavailable)
+		}
 		return nil, errors.New("falha ao gerar URL de upload")
 	}
 
@@ -138,13 +135,13 @@ func (uc *RequestUploadURLUseCase) Execute(ctx context.Context, uploaderID uuid.
 type ConfirmUploadUseCase struct {
 	repo        Repository
 	workoutRepo domainW.Repository
-	storage     StorageClient
+	storage     domainStorage.Port
 }
 
 func NewConfirmUploadUseCase(
 	r Repository,
 	workoutRepo domainW.Repository,
-	s StorageClient,
+	s domainStorage.Port,
 ) *ConfirmUploadUseCase {
 	return &ConfirmUploadUseCase{
 		repo:        r,
@@ -183,7 +180,10 @@ func (uc *ConfirmUploadUseCase) Execute(ctx context.Context, uploaderID uuid.UUI
 
 	meta, err := uc.storage.HeadObject(ctx, input.R2Key)
 	if err != nil {
-		if errors.Is(err, storage.ErrObjectNotFound) {
+		if errors.Is(err, domainStorage.ErrStorageDisabled) {
+			return nil, fmt.Errorf("%w: módulo de vídeo desabilitado neste ambiente", errs.ErrServiceUnavailable)
+		}
+		if errors.Is(err, domainStorage.ErrObjectNotFound) {
 			return nil, fmt.Errorf("%w: arquivo ainda não foi enviado ao armazenamento", errs.ErrInvalidInput)
 		}
 		return nil, errors.New("falha ao verificar arquivo no armazenamento")
@@ -210,26 +210,26 @@ func (uc *ConfirmUploadUseCase) Execute(ctx context.Context, uploaderID uuid.UUI
 }
 
 type GetSignedURLUseCase struct {
-	repo        Repository
-	workoutRepo domainW.Repository
-	studRepo    domainS.Repository
-	storage     StorageClient
-	cfg         *config.R2Config
+	repo         Repository
+	workoutRepo  domainW.Repository
+	studRepo     domainS.Repository
+	storage      domainStorage.Port
+	signedURLTTL time.Duration
 }
 
 func NewGetSignedURLUseCase(
 	r Repository,
 	workoutRepo domainW.Repository,
 	studRepo domainS.Repository,
-	s StorageClient,
-	cfg *config.R2Config,
+	s domainStorage.Port,
+	signedURLTTL time.Duration,
 ) *GetSignedURLUseCase {
 	return &GetSignedURLUseCase{
-		repo:        r,
-		workoutRepo: workoutRepo,
-		studRepo:    studRepo,
-		storage:     s,
-		cfg:         cfg,
+		repo:         r,
+		workoutRepo:  workoutRepo,
+		studRepo:     studRepo,
+		storage:      s,
+		signedURLTTL: signedURLTTL,
 	}
 }
 
@@ -246,13 +246,16 @@ func (uc *GetSignedURLUseCase) Execute(ctx context.Context, exerciseID, requeste
 		return nil, fmt.Errorf("%w: vídeo não encontrado para este exercício", errs.ErrNotFound)
 	}
 
-	ttl := uc.cfg.SignedURLTTL
-	if ttl == 0 {
+	ttl := uc.signedURLTTL
+	if ttl <= 0 {
 		ttl = 5 * time.Minute
 	}
 
 	signedURL, err := uc.storage.GenerateSignedURL(ctx, video.R2Key, ttl)
 	if err != nil {
+		if errors.Is(err, domainStorage.ErrStorageDisabled) {
+			return nil, fmt.Errorf("%w: módulo de vídeo desabilitado neste ambiente", errs.ErrServiceUnavailable)
+		}
 		return nil, errors.New("falha ao gerar URL de acesso ao vídeo")
 	}
 

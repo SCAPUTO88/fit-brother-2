@@ -13,15 +13,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
 
+	domainStorage "github.com/SCAPUTO88/fit-brother/internal/domain/storage"
 	"github.com/SCAPUTO88/fit-brother/internal/infrastructure/config"
 )
 
-var ErrObjectNotFound = errors.New("objeto não encontrado no storage")
-
-type ObjectMetadata struct {
-	SizeBytes int64
-	MimeType  string
-}
+var _ domainStorage.Port = (*R2Storage)(nil)
 
 type R2Storage struct {
 	client    *s3.Client
@@ -73,7 +69,7 @@ func (s *R2Storage) GeneratePresignedUploadURL(ctx context.Context, key string, 
 	return req.URL, nil
 }
 
-func (s *R2Storage) HeadObject(ctx context.Context, key string) (*ObjectMetadata, error) {
+func (s *R2Storage) HeadObject(ctx context.Context, key string) (*domainStorage.ObjectMetadata, error) {
 	out, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
@@ -81,16 +77,16 @@ func (s *R2Storage) HeadObject(ctx context.Context, key string) (*ObjectMetadata
 	if err != nil {
 		var respErr interface{ HTTPStatusCode() int }
 		if errors.As(err, &respErr) && respErr.HTTPStatusCode() == http.StatusNotFound {
-			return nil, ErrObjectNotFound
+			return nil, domainStorage.ErrObjectNotFound
 		}
 		var apiErr smithy.APIError
 		if errors.As(err, &apiErr) && (apiErr.ErrorCode() == "NotFound" || apiErr.ErrorCode() == "NoSuchKey") {
-			return nil, ErrObjectNotFound
+			return nil, domainStorage.ErrObjectNotFound
 		}
 		return nil, fmt.Errorf("falha ao consultar metadados no R2: %w", err)
 	}
 
-	return &ObjectMetadata{
+	return &domainStorage.ObjectMetadata{
 		SizeBytes: aws.ToInt64(out.ContentLength),
 		MimeType:  aws.ToString(out.ContentType),
 	}, nil

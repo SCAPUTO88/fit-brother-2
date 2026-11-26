@@ -21,6 +21,8 @@ func respondDomainError(c *gin.Context, err error, internalMsg string) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 	case errors.Is(err, errs.ErrConflict):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+	case errors.Is(err, errs.ErrServiceUnavailable):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 	default:
 		if internalMsg == "" {
 			internalMsg = "erro interno no servidor"

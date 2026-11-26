@@ -101,4 +101,21 @@ func TestRequireAuthAndSecurityHeaders(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Body.String(), userID.String())
 	})
+
+	t.Run("Deve autenticar usuario ativo via cookie HttpOnly", func(t *testing.T) {
+		r := gin.New()
+		r.GET("/protected", middleware.RequireAuth(jwtSvc, &stubUserStatusChecker{active: true}), func(c *gin.Context) {
+			claims, ok := middleware.GetClaims(c)
+			require.True(t, ok)
+			c.JSON(http.StatusOK, gin.H{"user_id": claims.UserID.String()})
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+		req.AddCookie(&http.Cookie{Name: middleware.AccessCookieName, Value: token})
+		w := httptest.NewRecorder()
+
+		r.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), userID.String())
+	})
 }
