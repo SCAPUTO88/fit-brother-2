@@ -164,7 +164,7 @@ func (r *CatalogRepository) UpsertGlobalExercise(ctx context.Context, ex *catalo
 
 	var returnedID uuid.UUID
 	var inserted bool
-	err = getExecutor(ctx, r.db).QueryRowxContext(
+	err = getExecutor(ctx, r.db).QueryRowContext(
 		ctx,
 		query,
 		ex.ID,
