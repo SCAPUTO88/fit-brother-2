@@ -956,15 +956,72 @@ func TestSecurityBaselinePostgresIntegration(t *testing.T) {
 	// 12. Fase 5 — Workout Builder (Templates, Clonagem, Snapshots Imutáveis, Atribuição e Contrato de Vídeo)
 	t.Run("Fase 5 - Workout Builder Templates Clonagem Versoes Imutaveis e Atribuicao", func(t *testing.T) {
 		// 12.1 Contrato legado /v1/workouts/:id agora sinaliza has_video=true quando há vídeo confirmado
-		student1RefreshToken, _ := loginAndGetTokens(t, router, "aluno1@fit.test", "AlunoPass!2026")
-		wLegacyPlans := doJSONRequest(t, router, http.MethodGet, "/v1/workouts", student1RefreshToken, nil)
-		require.Equal(t, http.StatusOK, wLegacyPlans.Code)
-		var legacyPlans []struct {
+		wStudBuilderCreate := doJSONRequest(t, router, http.MethodPost, "/v1/students", trainerAToken, map[string]string{
+			"email":     "builder.aluno@fit.test",
+			"full_name": "Aluno Builder Org A",
+			"password":  "BuilderPass!2026",
+		})
+		require.Equal(t, http.StatusCreated, wStudBuilderCreate.Code, wStudBuilderCreate.Body.String())
+		var builderStud struct {
 			ID string `json:"id"`
 		}
-		require.NoError(t, json.Unmarshal(wLegacyPlans.Body.Bytes(), &legacyPlans))
-		require.NotEmpty(t, legacyPlans)
-		wLegacyDetail := doJSONRequest(t, router, http.MethodGet, "/v1/workouts/"+legacyPlans[0].ID, student1RefreshToken, nil)
+		require.NoError(t, json.Unmarshal(wStudBuilderCreate.Body.Bytes(), &builderStud))
+		builderStudToken, _ := loginAndGetTokens(t, router, "builder.aluno@fit.test", "BuilderPass!2026")
+
+		wLegacyPlanCreate := doJSONRequest(t, router, http.MethodPost, "/v1/workouts", trainerAToken, map[string]string{
+			"student_id":  builderStud.ID,
+			"title":       "Plano Legado Com Video",
+			"description": "Validacao has_video",
+		})
+		require.Equal(t, http.StatusCreated, wLegacyPlanCreate.Code, wLegacyPlanCreate.Body.String())
+		var legacyPlanCreated struct {
+			ID string `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal(wLegacyPlanCreate.Body.Bytes(), &legacyPlanCreated))
+
+		wLegacySessCreate := doJSONRequest(t, router, http.MethodPost, "/v1/workouts/"+legacyPlanCreated.ID+"/sessions", trainerAToken, map[string]any{
+			"workout_plan_id": legacyPlanCreated.ID,
+			"title":           "Sessao Legada A",
+			"day_of_week":     1,
+		})
+		require.Equal(t, http.StatusCreated, wLegacySessCreate.Code, wLegacySessCreate.Body.String())
+		var legacySessCreated struct {
+			ID string `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal(wLegacySessCreate.Body.Bytes(), &legacySessCreated))
+
+		wLegacyExCreate := doJSONRequest(t, router, http.MethodPost, "/v1/workouts/sessions/"+legacySessCreated.ID+"/exercises", trainerAToken, map[string]any{
+			"workout_session_id": legacySessCreated.ID,
+			"name":               "Supino Legado",
+			"sets":               3,
+			"reps":               "10",
+			"rest_seconds":       60,
+			"position":           1,
+		})
+		require.Equal(t, http.StatusCreated, wLegacyExCreate.Code, wLegacyExCreate.Body.String())
+		var legacyExCreated struct {
+			ID string `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal(wLegacyExCreate.Body.Bytes(), &legacyExCreated))
+
+		wLegacyVidUp := doJSONRequest(t, router, http.MethodPost, "/v1/videos/upload-url", trainerAToken, map[string]string{
+			"exercise_id": legacyExCreated.ID,
+			"filename":    "supino-legado.mp4",
+			"mime_type":   "video/mp4",
+		})
+		require.Equal(t, http.StatusOK, wLegacyVidUp.Code, wLegacyVidUp.Body.String())
+		var legacyVidOut struct {
+			R2Key string `json:"r2_key"`
+		}
+		require.NoError(t, json.Unmarshal(wLegacyVidUp.Body.Bytes(), &legacyVidOut))
+		fakeStorage.putFakeObject(legacyVidOut.R2Key, 256000, "video/mp4")
+		wLegacyVidConfirm := doJSONRequest(t, router, http.MethodPost, "/v1/videos", trainerAToken, map[string]string{
+			"exercise_id": legacyExCreated.ID,
+			"r2_key":      legacyVidOut.R2Key,
+		})
+		require.Equal(t, http.StatusCreated, wLegacyVidConfirm.Code, wLegacyVidConfirm.Body.String())
+
+		wLegacyDetail := doJSONRequest(t, router, http.MethodGet, "/v1/workouts/"+legacyPlanCreated.ID, builderStudToken, nil)
 		require.Equal(t, http.StatusOK, wLegacyDetail.Code, wLegacyDetail.Body.String())
 		assert.Contains(t, wLegacyDetail.Body.String(), `"has_video":true`)
 
@@ -1088,18 +1145,6 @@ func TestSecurityBaselinePostgresIntegration(t *testing.T) {
 		assert.Equal(t, mediaReq.MediaID, *tplOut.DraftStructure.Sessions[0].Exercises[1].MediaID)
 
 		// 12.4 Publica v1 e atribui ao aluno ativo da Org A
-		wStudBuilderCreate := doJSONRequest(t, router, http.MethodPost, "/v1/students", trainerAToken, map[string]string{
-			"email":     "builder.aluno@fit.test",
-			"full_name": "Aluno Builder Org A",
-			"password":  "BuilderPass!2026",
-		})
-		require.Equal(t, http.StatusCreated, wStudBuilderCreate.Code, wStudBuilderCreate.Body.String())
-		var builderStud struct {
-			ID string `json:"id"`
-		}
-		require.NoError(t, json.Unmarshal(wStudBuilderCreate.Body.Bytes(), &builderStud))
-		builderStudToken, _ := loginAndGetTokens(t, router, "builder.aluno@fit.test", "BuilderPass!2026")
-
 		wAssignV1 := doJSONRequest(t, router, http.MethodPost, "/v1/workout-templates/"+tplOut.ID+"/assign", trainerAToken, map[string]any{
 			"student_id": builderStud.ID,
 			"notes":      "Ciclo 1 - Foco técnico",

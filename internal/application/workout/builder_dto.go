@@ -136,24 +136,24 @@ type VersionDetailOutput struct {
 }
 
 type AssignmentSummaryOutput struct {
-	ID                  string     `json:"id"`
-	OrganizationID      string     `json:"organization_id"`
-	TemplateID          string     `json:"template_id"`
-	WorkoutVersionID    string     `json:"workout_version_id"`
-	StudentID           string     `json:"student_id"`
-	StudentName         string     `json:"student_name"`
-	TrainerUserID       string     `json:"trainer_user_id"`
-	LegacyWorkoutPlanID *string    `json:"legacy_workout_plan_id,omitempty"`
-	TemplateTitle       string     `json:"template_title"`
-	Goal                string     `json:"goal"`
-	VersionNumber       int        `json:"version_number"`
-	ValidFrom           string     `json:"valid_from"`
-	ValidUntil          *string    `json:"valid_until,omitempty"`
-	Status              string     `json:"status"`
-	Notes               string     `json:"notes"`
-	SessionCount        int        `json:"session_count"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
+	ID                  string    `json:"id"`
+	OrganizationID      string    `json:"organization_id"`
+	TemplateID          string    `json:"template_id"`
+	WorkoutVersionID    string    `json:"workout_version_id"`
+	StudentID           string    `json:"student_id"`
+	StudentName         string    `json:"student_name"`
+	TrainerUserID       string    `json:"trainer_user_id"`
+	LegacyWorkoutPlanID *string   `json:"legacy_workout_plan_id,omitempty"`
+	TemplateTitle       string    `json:"template_title"`
+	Goal                string    `json:"goal"`
+	VersionNumber       int       `json:"version_number"`
+	ValidFrom           string    `json:"valid_from"`
+	ValidUntil          *string   `json:"valid_until,omitempty"`
+	Status              string    `json:"status"`
+	Notes               string    `json:"notes"`
+	SessionCount        int       `json:"session_count"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 type AssignmentDetailOutput struct {
