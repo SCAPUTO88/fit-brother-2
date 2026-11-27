@@ -178,11 +178,11 @@ func (r *WorkoutRepository) ListSessionsByPlan(ctx context.Context, planID uuid.
 
 func (r *WorkoutRepository) CreateExercise(ctx context.Context, exercise *domain.Exercise) error {
 	query := `
-		INSERT INTO exercises (id, workout_session_id, name, sets, reps, rest_seconds, notes, video_url, position, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO exercises (id, workout_session_id, catalog_exercise_id, name, sets, reps, rest_seconds, notes, video_url, position, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 	_, err := getExecutor(ctx, r.db).ExecContext(ctx, query,
-		exercise.ID, exercise.WorkoutSessionID, exercise.Name,
+		exercise.ID, exercise.WorkoutSessionID, exercise.CatalogExerciseID, exercise.Name,
 		exercise.Sets, exercise.Reps, exercise.RestSeconds,
 		exercise.Notes, exercise.VideoURL, exercise.Position, exercise.CreatedAt,
 	)
@@ -191,18 +191,25 @@ func (r *WorkoutRepository) CreateExercise(ctx context.Context, exercise *domain
 
 func (r *WorkoutRepository) GetExerciseByID(ctx context.Context, id uuid.UUID) (*domain.Exercise, error) {
 	type row struct {
-		ID               uuid.UUID `db:"id"`
-		WorkoutSessionID uuid.UUID `db:"workout_session_id"`
-		Name             string    `db:"name"`
-		Sets             int       `db:"sets"`
-		Reps             string    `db:"reps"`
-		RestSeconds      int       `db:"rest_seconds"`
-		Notes            string    `db:"notes"`
-		VideoURL         string    `db:"video_url"`
-		Position         int       `db:"position"`
-		CreatedAt        time.Time `db:"created_at"`
+		ID                uuid.UUID  `db:"id"`
+		WorkoutSessionID  uuid.UUID  `db:"workout_session_id"`
+		CatalogExerciseID *uuid.UUID `db:"catalog_exercise_id"`
+		Name              string     `db:"name"`
+		Sets              int        `db:"sets"`
+		Reps              string     `db:"reps"`
+		RestSeconds       int        `db:"rest_seconds"`
+		Notes             string     `db:"notes"`
+		VideoURL          string     `db:"video_url"`
+		Position          int        `db:"position"`
+		CreatedAt         time.Time  `db:"created_at"`
 	}
-	query := `SELECT id, workout_session_id, name, sets, reps, rest_seconds, notes, video_url, position, created_at FROM exercises WHERE id = $1`
+	query := `
+		SELECT id, workout_session_id, catalog_exercise_id, name, sets, reps,
+		       rest_seconds, COALESCE(notes, '') AS notes, COALESCE(video_url, '') AS video_url,
+		       position, created_at
+		FROM exercises
+		WHERE id = $1
+	`
 	var r2 row
 	if err := getExecutor(ctx, r.db).GetContext(ctx, &r2, query, id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -211,33 +218,42 @@ func (r *WorkoutRepository) GetExerciseByID(ctx context.Context, id uuid.UUID) (
 		return nil, err
 	}
 	return &domain.Exercise{
-		ID:               r2.ID,
-		WorkoutSessionID: r2.WorkoutSessionID,
-		Name:             r2.Name,
-		Sets:             r2.Sets,
-		Reps:             r2.Reps,
-		RestSeconds:      r2.RestSeconds,
-		Notes:            r2.Notes,
-		VideoURL:         r2.VideoURL,
-		Position:         r2.Position,
-		CreatedAt:        r2.CreatedAt,
+		ID:                r2.ID,
+		WorkoutSessionID:  r2.WorkoutSessionID,
+		CatalogExerciseID: r2.CatalogExerciseID,
+		Name:              r2.Name,
+		Sets:              r2.Sets,
+		Reps:              r2.Reps,
+		RestSeconds:       r2.RestSeconds,
+		Notes:             r2.Notes,
+		VideoURL:          r2.VideoURL,
+		Position:          r2.Position,
+		CreatedAt:         r2.CreatedAt,
 	}, nil
 }
 
 func (r *WorkoutRepository) ListExercisesBySession(ctx context.Context, sessionID uuid.UUID) ([]*domain.Exercise, error) {
 	type row struct {
-		ID               uuid.UUID `db:"id"`
-		WorkoutSessionID uuid.UUID `db:"workout_session_id"`
-		Name             string    `db:"name"`
-		Sets             int       `db:"sets"`
-		Reps             string    `db:"reps"`
-		RestSeconds      int       `db:"rest_seconds"`
-		Notes            string    `db:"notes"`
-		VideoURL         string    `db:"video_url"`
-		Position         int       `db:"position"`
-		CreatedAt        time.Time `db:"created_at"`
+		ID                uuid.UUID  `db:"id"`
+		WorkoutSessionID  uuid.UUID  `db:"workout_session_id"`
+		CatalogExerciseID *uuid.UUID `db:"catalog_exercise_id"`
+		Name              string     `db:"name"`
+		Sets              int        `db:"sets"`
+		Reps              string     `db:"reps"`
+		RestSeconds       int        `db:"rest_seconds"`
+		Notes             string     `db:"notes"`
+		VideoURL          string     `db:"video_url"`
+		Position          int        `db:"position"`
+		CreatedAt         time.Time  `db:"created_at"`
 	}
-	query := `SELECT id, workout_session_id, name, sets, reps, rest_seconds, notes, video_url, position, created_at FROM exercises WHERE workout_session_id = $1 ORDER BY position`
+	query := `
+		SELECT id, workout_session_id, catalog_exercise_id, name, sets, reps,
+		       rest_seconds, COALESCE(notes, '') AS notes, COALESCE(video_url, '') AS video_url,
+		       position, created_at
+		FROM exercises
+		WHERE workout_session_id = $1
+		ORDER BY position
+	`
 	var rows []row
 	if err := getExecutor(ctx, r.db).SelectContext(ctx, &rows, query, sessionID); err != nil {
 		return nil, err
@@ -245,16 +261,17 @@ func (r *WorkoutRepository) ListExercisesBySession(ctx context.Context, sessionI
 	exercises := make([]*domain.Exercise, 0, len(rows))
 	for _, row := range rows {
 		exercises = append(exercises, &domain.Exercise{
-			ID:               row.ID,
-			WorkoutSessionID: row.WorkoutSessionID,
-			Name:             row.Name,
-			Sets:             row.Sets,
-			Reps:             row.Reps,
-			RestSeconds:      row.RestSeconds,
-			Notes:            row.Notes,
-			VideoURL:         row.VideoURL,
-			Position:         row.Position,
-			CreatedAt:        row.CreatedAt,
+			ID:                row.ID,
+			WorkoutSessionID:  row.WorkoutSessionID,
+			CatalogExerciseID: row.CatalogExerciseID,
+			Name:              row.Name,
+			Sets:              row.Sets,
+			Reps:              row.Reps,
+			RestSeconds:       row.RestSeconds,
+			Notes:             row.Notes,
+			VideoURL:          row.VideoURL,
+			Position:          row.Position,
+			CreatedAt:         row.CreatedAt,
 		})
 	}
 	return exercises, nil

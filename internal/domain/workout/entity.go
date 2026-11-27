@@ -30,16 +30,17 @@ type WorkoutSession struct {
 }
 
 type Exercise struct {
-	ID               uuid.UUID
-	WorkoutSessionID uuid.UUID
-	Name             string
-	Sets             int
-	Reps             string
-	RestSeconds      int
-	Notes            string
-	VideoURL         string
-	Position         int
-	CreatedAt        time.Time
+	ID                uuid.UUID
+	WorkoutSessionID  uuid.UUID
+	CatalogExerciseID *uuid.UUID
+	Name              string
+	Sets              int
+	Reps              string
+	RestSeconds       int
+	Notes             string
+	VideoURL          string
+	Position          int
+	CreatedAt         time.Time
 }
 
 func NewWorkoutPlan(trainerID, studentID uuid.UUID, title, description string) (*WorkoutPlan, error) {

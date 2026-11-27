@@ -85,3 +85,22 @@ Este arquivo registra os resultados executados ao longo das fases.
   5. **`Flutter (Analyze, Test & Web Build)` (`success`):** `flutter analyze --no-fatal-infos` (sem warnings/errors; apenas `17` `info`s do SDK sobre `material.dart`), `flutter test` (`10 tests passed`, incluindo os widget tests da `ExerciseCatalogScreen` para Treinador e Aluno) e `flutter build web --release` (`✓ Built build/web`).
   6. **`Build (Go & Docker)` (`success`):** compilação estática de `./cmd/api` e build da imagem `docker/Dockerfile`.
 
+---
+
+## Fase 5 — Workout Builder (`feat/fase-5-workout-builder`, 2026-11-27)
+
+- **Ambiente de execução real:** GitHub Actions (`ubuntu-latest`) no repositório `SCAPUTO88/fit-brother-2` (PR `#5`, commit `8d86a43`, workflow run [`46015141865`](https://github.com/SCAPUTO88/fit-brother-2/actions/runs/46015141865)).
+- **Resultados verificados na esteira CI (`6/6` jobs aprovados):**
+  1. **`Lint (Go)` (`success`):** `golangci-lint` (`v1.64.8`) sem issues (`0`) e `gofmt -l .` limpo.
+  2. **`Security Scan (Go)` (`success`):** `govulncheck` (`v1.2.0`) com Go `1.26.11` sem vulnerabilidades reportadas.
+  3. **`DevSecOps (Secrets, SAST, SCA & SBOM)` (`success`):**
+     - `Gitleaks` (`8.30.1`): `no leaks found` (~`1.29 MB` analisados).
+     - `Semgrep` (`1.186.0`): `0` findings (`0` blocking) em `248` targets (`80` regras executadas).
+     - `OSV-Scanner` (`2.7.1`): `70` pacotes Go (`go.mod`) e `118` pacotes Dart/Flutter (`fit_brother_app/pubspec.lock`) analisados sem vulnerabilidades exploráveis.
+     - `Trivy`: SBOM CycloneDX gerado e publicado como artefato `fit-brother-sbom-cdx` (`9629` bytes); Trivy FS (`CRITICAL,HIGH`) limpo em `go.mod` e `fit_brother_app/pubspec.lock`.
+  4. **`Test (Go + Postgres)` (`success`):**
+     - `go test -v -race -count=1 ./internal/...` aprovado em todos os `20` pacotes testáveis (incluindo `internal/domain/workout` com `builder_test.go` e `internal/application/workout` com `builder_usecases_test.go`).
+     - `go test -v -race -count=1 -timeout 3m -tags integration ./tests/integration/...` aprovado com PostgreSQL 16 (`94.131s` pacote): `TestSecurityBaselinePostgresIntegration` (`93.11s`), cobrindo `Fluxo_Web_Cookie_+_CSRF_e_LocalStorage_sem_Redis/R2` (`3.21s`), `Fase_3_-_Identidade_Multi-Tenancy_Convites_MFA_Reset_e_LGPD` (`41.71s`), `Fase_4_-_Biblioteca_de_Exercicios_Catalogo_PT-BR_Importador_Idempotente_e_Midia_Segura` (`16.01s`) e `Fase_5_-_Workout_Builder_Templates_Clonagem_Versoes_Imutaveis_e_Atribuicao` (`12.83s`, aplicando migrations `001`–`009` e validando `has_video:true`, bloqueio de exercício customizado cross-tenant, criação de template com mídia confirmada, atribuição de versão `v1`, edição de rascunho + publicação `v2` sem corromper `v1`, trigger SQL de imutabilidade em `workout_versions`, clonagem independente, URL assinada de demonstração e bloqueio multi-tenant/RBAC).
+     - **Cobertura unitária (`go tool cover`):** `35.0%` total de statements (`internal/domain/student` `93.8%`, `internal/infrastructure/totp` `91.9%`, `internal/domain/workout` `89.5%`, `internal/infrastructure/jwt` `79.3%`, `internal/infrastructure/crypto` `79.2%`, `internal/adapters/http/middleware` `73.4%`, `internal/application/video` `73.0%`, `internal/infrastructure/config` `67.6%`, `internal/application/privacy` `67.5%`, `internal/application/catalog` `67.4%`, `internal/application/organization` `61.4%`, `internal/adapters/storage` `59.6%`, `internal/application/student` `58.7%`, `internal/application/invitation` `55.6%`, `internal/application/auth` `55.3%`, `internal/application/workout` `51.7%`, `internal/adapters/mailer` `18.2%`, `internal/adapters/http` `6.8%`, `internal/adapters/http/handler` `4.2%`, `internal/adapters/repository/postgres` `1.9%`).
+  5. **`Flutter (Analyze, Test & Web Build)` (`success`):** `flutter analyze --no-fatal-infos` (sem warnings/errors; `22` `info`s do SDK sobre `material.dart`), `flutter test` (`12 tests passed`, incluindo widget tests de `WorkoutTemplatesScreen` e `PlanDetailScreen` validando abertura de mídia assinada via `hasVideo=true`) e `flutter build web --release` (`✓ Built build/web`).
+  6. **`Build (Go & Docker)` (`success`):** compilação estática de `./cmd/api` e build da imagem `docker/Dockerfile`.

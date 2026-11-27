@@ -81,6 +81,7 @@ func SetupRouterWithDeps(cfg *config.Config, db *sqlx.DB, deps RouterDeps) (*gin
 	userRepo := postgres.NewUserRepository(db)
 	studentRepo := postgres.NewStudentRepository(db)
 	workoutRepo := postgres.NewWorkoutRepository(db)
+	builderRepo := postgres.NewWorkoutBuilderRepository(db)
 	videoRepo := postgres.NewVideoRepository(db)
 	orgRepo := postgres.NewOrganizationRepository(db)
 	invRepo := postgres.NewInvitationRepository(db)
@@ -126,7 +127,9 @@ func SetupRouterWithDeps(cfg *config.Config, db *sqlx.DB, deps RouterDeps) (*gin
 	createExerciseUC := appworkout.NewCreateExerciseUseCase(workoutRepo)
 	listPlansUC := appworkout.NewListPlansUseCase(workoutRepo, studentRepo)
 	getPlanDetailsUC := appworkout.NewGetPlanDetailsUseCase(workoutRepo, studentRepo).
-		WithOrganizationRepo(orgRepo)
+		WithOrganizationRepo(orgRepo).
+		WithVideoChecker(videoRepo)
+	builderUC := appworkout.NewBuilderUseCase(builderRepo, orgRepo, studentRepo, userRepo, catalogRepo, privacyRepo, txManager)
 
 	requestUploadURLUC := appvideo.NewRequestUploadURLUseCase(videoRepo, workoutRepo, videoStorage, signedURLTTL)
 	confirmUploadUC := appvideo.NewConfirmUploadUseCase(videoRepo, workoutRepo, videoStorage)
@@ -145,6 +148,7 @@ func SetupRouterWithDeps(cfg *config.Config, db *sqlx.DB, deps RouterDeps) (*gin
 		WithPhase3(resetUC, mfaUC)
 	studentHandler := handler.NewStudentHandler(createStudentUC, getStudentUC, listStudentsUC, anonymizeStudentUC)
 	workoutHandler := handler.NewWorkoutHandler(createPlanUC, createSessionUC, createExerciseUC, listPlansUC, getPlanDetailsUC)
+	builderHandler := handler.NewWorkoutBuilderHandler(builderUC)
 	videoHandler := handler.NewVideoHandler(requestUploadURLUC, confirmUploadUC, getSignedURLUC)
 	orgHandler := handler.NewOrganizationHandler(orgUC)
 	invHandler := handler.NewInvitationHandler(invUC, cfg.App.IsProduction(), cfg.JWT.RefreshTokenTTL)
@@ -169,6 +173,7 @@ func SetupRouterWithDeps(cfg *config.Config, db *sqlx.DB, deps RouterDeps) (*gin
 		authHandler.RegisterProtectedRoutes(v1, authMiddleware)
 		studentHandler.RegisterRoutes(v1, authMiddleware)
 		workoutHandler.RegisterRoutes(v1, authMiddleware)
+		builderHandler.RegisterRoutes(v1, authMiddleware)
 		videoHandler.RegisterRoutes(v1, authMiddleware)
 		orgHandler.RegisterRoutes(v1, authMiddleware)
 		invHandler.RegisterRoutes(v1, authRateMiddleware, authMiddleware)

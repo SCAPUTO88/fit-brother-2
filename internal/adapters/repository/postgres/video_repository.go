@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -142,4 +144,33 @@ func (r *VideoRepository) ConfirmPending(ctx context.Context, id uuid.UUID, size
 func (r *VideoRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	_, err := getExecutor(ctx, r.db).ExecContext(ctx, `DELETE FROM videos WHERE id = $1`, id)
 	return err
+}
+
+func (r *VideoRepository) HasConfirmedVideosByExerciseIDs(ctx context.Context, exerciseIDs []uuid.UUID) (map[uuid.UUID]bool, error) {
+	result := make(map[uuid.UUID]bool)
+	if len(exerciseIDs) == 0 {
+		return result, nil
+	}
+
+	placeholders := make([]string, 0, len(exerciseIDs))
+	args := make([]any, 0, len(exerciseIDs))
+	for i, id := range exerciseIDs {
+		placeholders = append(placeholders, "$"+strconv.Itoa(i+1))
+		args = append(args, id)
+	}
+
+	query := `
+		SELECT DISTINCT exercise_id
+		FROM videos
+		WHERE status = 'CONFIRMED'
+		  AND exercise_id IN (` + strings.Join(placeholders, ", ") + `)
+	`
+	var foundIDs []uuid.UUID
+	if err := getExecutor(ctx, r.db).SelectContext(ctx, &foundIDs, query, args...); err != nil {
+		return nil, err
+	}
+	for _, id := range foundIDs {
+		result[id] = true
+	}
+	return result, nil
 }

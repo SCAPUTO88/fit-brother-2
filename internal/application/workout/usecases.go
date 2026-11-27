@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -157,10 +158,20 @@ func (uc *CreateExerciseUseCase) Execute(ctx context.Context, trainerID uuid.UUI
 		return nil, fmt.Errorf("%w: acesso negado ao plano de outro treinador", errs.ErrForbidden)
 	}
 
+	var catalogExID *uuid.UUID
+	if trimmed := strings.TrimSpace(input.CatalogExerciseID); trimmed != "" {
+		parsedCatID, err := uuid.Parse(trimmed)
+		if err != nil {
+			return nil, fmt.Errorf("%w: catalog_exercise_id inválido", errs.ErrInvalidInput)
+		}
+		catalogExID = &parsedCatID
+	}
+
 	exercise, err := domain.NewExercise(sessionID, input.Name, input.Sets, input.Reps, input.RestSeconds, input.Position)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errs.ErrInvalidInput, err)
 	}
+	exercise.CatalogExerciseID = catalogExID
 	exercise.Notes = input.Notes
 	exercise.VideoURL = input.VideoURL
 
@@ -168,16 +179,24 @@ func (uc *CreateExerciseUseCase) Execute(ctx context.Context, trainerID uuid.UUI
 		return nil, errors.New("falha ao salvar exercício")
 	}
 
+	var catIDStr *string
+	if exercise.CatalogExerciseID != nil {
+		v := exercise.CatalogExerciseID.String()
+		catIDStr = &v
+	}
+
 	return &ExerciseOutput{
-		ID:               exercise.ID.String(),
-		WorkoutSessionID: exercise.WorkoutSessionID.String(),
-		Name:             exercise.Name,
-		Sets:             exercise.Sets,
-		Reps:             exercise.Reps,
-		RestSeconds:      exercise.RestSeconds,
-		Notes:            exercise.Notes,
-		VideoURL:         exercise.VideoURL,
-		Position:         exercise.Position,
+		ID:                exercise.ID.String(),
+		WorkoutSessionID:  exercise.WorkoutSessionID.String(),
+		CatalogExerciseID: catIDStr,
+		Name:              exercise.Name,
+		Sets:              exercise.Sets,
+		Reps:              exercise.Reps,
+		RestSeconds:       exercise.RestSeconds,
+		Notes:             exercise.Notes,
+		VideoURL:          exercise.VideoURL,
+		HasVideo:          strings.TrimSpace(exercise.VideoURL) != "",
+		Position:          exercise.Position,
 	}, nil
 }
 
@@ -230,10 +249,15 @@ func toPlansOutput(plans []*domain.WorkoutPlan) []*PlanOutput {
 	return out
 }
 
+type VideoPresenceChecker interface {
+	HasConfirmedVideosByExerciseIDs(ctx context.Context, exerciseIDs []uuid.UUID) (map[uuid.UUID]bool, error)
+}
+
 type GetPlanDetailsUseCase struct {
-	repo     domain.Repository
-	studRepo domainS.Repository
-	orgRepo  domainOrg.Repository
+	repo         domain.Repository
+	studRepo     domainS.Repository
+	orgRepo      domainOrg.Repository
+	videoChecker VideoPresenceChecker
 }
 
 func NewGetPlanDetailsUseCase(r domain.Repository, sr domainS.Repository) *GetPlanDetailsUseCase {
@@ -242,6 +266,11 @@ func NewGetPlanDetailsUseCase(r domain.Repository, sr domainS.Repository) *GetPl
 
 func (uc *GetPlanDetailsUseCase) WithOrganizationRepo(orgRepo domainOrg.Repository) *GetPlanDetailsUseCase {
 	uc.orgRepo = orgRepo
+	return uc
+}
+
+func (uc *GetPlanDetailsUseCase) WithVideoChecker(checker VideoPresenceChecker) *GetPlanDetailsUseCase {
+	uc.videoChecker = checker
 	return uc
 }
 
@@ -289,25 +318,52 @@ func (uc *GetPlanDetailsUseCase) Execute(ctx context.Context, planIDStr string, 
 		return nil, err
 	}
 
-	sessionDetails := make([]SessionDetailsOutput, 0, len(sessions))
+	type sessionPair struct {
+		session   *domain.WorkoutSession
+		exercises []*domain.Exercise
+	}
+	pairs := make([]sessionPair, 0, len(sessions))
+	allExerciseIDs := make([]uuid.UUID, 0)
 	for _, s := range sessions {
 		exercises, err := uc.repo.ListExercisesBySession(ctx, s.ID)
 		if err != nil {
 			return nil, err
 		}
-
-		exOut := make([]ExerciseOutput, 0, len(exercises))
+		pairs = append(pairs, sessionPair{session: s, exercises: exercises})
 		for _, e := range exercises {
+			allExerciseIDs = append(allExerciseIDs, e.ID)
+		}
+	}
+
+	confirmedVideos := make(map[uuid.UUID]bool)
+	if uc.videoChecker != nil && len(allExerciseIDs) > 0 {
+		if foundMap, err := uc.videoChecker.HasConfirmedVideosByExerciseIDs(ctx, allExerciseIDs); err == nil && foundMap != nil {
+			confirmedVideos = foundMap
+		}
+	}
+
+	sessionDetails := make([]SessionDetailsOutput, 0, len(pairs))
+	for _, pair := range pairs {
+		s := pair.session
+		exOut := make([]ExerciseOutput, 0, len(pair.exercises))
+		for _, e := range pair.exercises {
+			var catIDStr *string
+			if e.CatalogExerciseID != nil {
+				v := e.CatalogExerciseID.String()
+				catIDStr = &v
+			}
 			exOut = append(exOut, ExerciseOutput{
-				ID:               e.ID.String(),
-				WorkoutSessionID: e.WorkoutSessionID.String(),
-				Name:             e.Name,
-				Sets:             e.Sets,
-				Reps:             e.Reps,
-				RestSeconds:      e.RestSeconds,
-				Notes:            e.Notes,
-				VideoURL:         e.VideoURL,
-				Position:         e.Position,
+				ID:                e.ID.String(),
+				WorkoutSessionID:  e.WorkoutSessionID.String(),
+				CatalogExerciseID: catIDStr,
+				Name:              e.Name,
+				Sets:              e.Sets,
+				Reps:              e.Reps,
+				RestSeconds:       e.RestSeconds,
+				Notes:             e.Notes,
+				VideoURL:          e.VideoURL,
+				HasVideo:          confirmedVideos[e.ID] || strings.TrimSpace(e.VideoURL) != "",
+				Position:          e.Position,
 			})
 		}
 

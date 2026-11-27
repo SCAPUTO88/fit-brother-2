@@ -12,6 +12,9 @@ import 'package:fit_brother_app/features/auth/password_reset_screen.dart';
 import 'package:fit_brother_app/features/catalog/catalog_provider.dart';
 import 'package:fit_brother_app/features/catalog/exercise_catalog_screen.dart';
 import 'package:fit_brother_app/features/students/create_student_screen.dart';
+import 'package:fit_brother_app/features/workouts/plan_detail_screen.dart';
+import 'package:fit_brother_app/features/workouts/workout_templates_screen.dart';
+import 'package:fit_brother_app/features/workouts/workouts_provider.dart';
 import 'package:fit_brother_app/main.dart';
 
 class _TestAuthNotifier extends AuthNotifier {
@@ -21,6 +24,140 @@ class _TestAuthNotifier extends AuthNotifier {
 
   @override
   AuthState build() => _initial;
+}
+
+class _FakeWorkoutBuilderService implements WorkoutBuilderService {
+  String? lastLegacyExerciseId;
+  bool clonedCalled = false;
+
+  final List<WorkoutTemplateSummary> _templates = [
+    const WorkoutTemplateSummary(
+      id: 'tpl-1',
+      organizationId: 'org-1',
+      title: 'Hipertrofia Base AB',
+      description: 'Treino base para hipertrofia',
+      goal: 'Hipertrofia',
+      latestVersionNumber: 1,
+      sessionCount: 2,
+      exerciseCount: 4,
+    ),
+  ];
+
+  final List<WorkoutAssignmentSummary> _assignments = const [
+    WorkoutAssignmentSummary(
+      id: 'asgn-1',
+      templateId: 'tpl-1',
+      workoutVersionId: 'ver-1',
+      studentId: 'stu-1',
+      studentName: 'João Silva',
+      templateTitle: 'Hipertrofia Base AB',
+      goal: 'Hipertrofia',
+      versionNumber: 1,
+      validFrom: '2026-04-01',
+      status: 'ACTIVE',
+      sessionCount: 2,
+    ),
+  ];
+
+  @override
+  Future<List<WorkoutTemplateSummary>> listTemplates({bool includeArchived = false}) async {
+    return List<WorkoutTemplateSummary>.from(_templates);
+  }
+
+  @override
+  Future<WorkoutTemplateDetail> getTemplate(String id) async {
+    return WorkoutTemplateDetail(
+      summary: _templates.first,
+      sessions: const [],
+      versions: const [],
+    );
+  }
+
+  @override
+  Future<WorkoutTemplateDetail> createTemplate({
+    required String title,
+    required String description,
+    required String goal,
+    required List<BuilderSessionItem> sessions,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<WorkoutTemplateDetail> updateTemplate(
+    String id, {
+    required String title,
+    required String description,
+    required String goal,
+    bool? isArchived,
+    required List<BuilderSessionItem> sessions,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<WorkoutTemplateDetail> cloneTemplate(String id, {String title = ''}) async {
+    clonedCalled = true;
+    final copy = WorkoutTemplateSummary(
+      id: 'tpl-2',
+      organizationId: 'org-1',
+      title: title.isEmpty ? 'Cópia de Hipertrofia Base AB' : title,
+      goal: 'Hipertrofia',
+      latestVersionNumber: 0,
+      sessionCount: 2,
+      exerciseCount: 4,
+    );
+    _templates.add(copy);
+    return WorkoutTemplateDetail(summary: copy, sessions: const [], versions: const []);
+  }
+
+  @override
+  Future<WorkoutVersionSummary> publishVersion(String id) async {
+    return const WorkoutVersionSummary(
+      id: 'ver-2',
+      templateId: 'tpl-1',
+      versionNumber: 2,
+      title: 'Hipertrofia Base AB',
+    );
+  }
+
+  @override
+  Future<WorkoutAssignmentDetail> assignTemplate(
+    String templateId, {
+    required String studentId,
+    String? workoutVersionId,
+    String notes = '',
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<List<WorkoutAssignmentSummary>> listAssignments({String? studentId}) async {
+    return _assignments;
+  }
+
+  @override
+  Future<WorkoutAssignmentDetail> getAssignment(String id) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> updateAssignmentStatus(String id, String status) async {}
+
+  @override
+  Future<ResolvedExerciseMedia> resolveExerciseMedia({
+    String? legacyExerciseId,
+    String? catalogExerciseId,
+    String? mediaId,
+    String? fallbackVideoUrl,
+  }) async {
+    lastLegacyExerciseId = legacyExerciseId;
+    return const ResolvedExerciseMedia(
+      signedUrl: 'https://storage.fitbrother.test/videos/signed-demo.mp4',
+      mediaType: 'VIDEO',
+      expiresIn: 300,
+    );
+  }
 }
 
 class _FakeCatalogService implements CatalogService {
@@ -224,5 +361,90 @@ void main() {
 
     expect(find.text('Supino Reto com Barra'), findsOneWidget);
     expect(find.text('Novo Exercício'), findsNothing);
+  });
+
+  testWidgets('WorkoutTemplatesScreen displays templates, clone action, and assignments tab', (WidgetTester tester) async {
+    final fakeBuilder = _FakeWorkoutBuilderService();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authProvider.overrideWith(
+            () => _TestAuthNotifier(const AuthState(isLoggedIn: true, role: 'TRAINER')),
+          ),
+          workoutBuilderServiceProvider.overrideWithValue(fakeBuilder),
+        ],
+        child: const MaterialApp(home: WorkoutTemplatesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Workout Builder'), findsOneWidget);
+    expect(find.text('Hipertrofia Base AB'), findsOneWidget);
+    expect(find.text('Versão v1'), findsOneWidget);
+
+    await tester.tap(find.text('Clonar'));
+    await tester.pumpAndSettle();
+    expect(fakeBuilder.clonedCalled, isTrue);
+
+    await tester.tap(find.text('Atribuições'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('João Silva'), findsOneWidget);
+  });
+
+  testWidgets('PlanDetailScreen triggers signed media dialog when hasVideo is true even with empty videoUrl', (WidgetTester tester) async {
+    final fakeBuilder = _FakeWorkoutBuilderService();
+    const fakeDetails = PlanDetails(
+      plan: WorkoutPlanSummary(
+        id: 'plan-1',
+        title: 'Plano Hipertrofia',
+        studentId: 'stu-1',
+        description: 'Treino completo',
+        isActive: true,
+      ),
+      sessions: [
+        SessionDetails(
+          id: 'sess-1',
+          title: 'Treino A',
+          dayOfWeek: 1,
+          notes: '',
+          exercises: [
+            ExerciseSummary(
+              id: 'ex-legacy-1',
+              name: 'Supino Reto',
+              sets: 4,
+              reps: '8-10',
+              restSeconds: 90,
+              notes: '',
+              videoUrl: '',
+              hasVideo: true,
+            ),
+          ],
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authProvider.overrideWith(
+            () => _TestAuthNotifier(const AuthState(isLoggedIn: true, role: 'STUDENT')),
+          ),
+          workoutBuilderServiceProvider.overrideWithValue(fakeBuilder),
+          planDetailsProvider('plan-1').overrideWith((ref) async => fakeDetails),
+        ],
+        child: const MaterialApp(home: PlanDetailScreen(planId: 'plan-1')),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final playButton = find.byIcon(Icons.play_circle_fill);
+    expect(playButton, findsOneWidget);
+
+    await tester.tap(playButton);
+    await tester.pumpAndSettle();
+
+    expect(fakeBuilder.lastLegacyExerciseId, equals('ex-legacy-1'));
+    expect(find.text('URL assinada de vídeo gerada com segurança'), findsOneWidget);
+    expect(find.text('https://storage.fitbrother.test/videos/signed-demo.mp4'), findsOneWidget);
   });
 }

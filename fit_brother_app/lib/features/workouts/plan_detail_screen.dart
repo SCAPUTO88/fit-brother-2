@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'workout_media_dialog.dart';
 import 'workouts_provider.dart';
 
 class PlanDetailScreen extends ConsumerWidget {
@@ -140,7 +141,7 @@ class PlanDetailScreen extends ConsumerWidget {
                     ),
                   )
                 else
-                  ...sessions.map((s) => _buildSessionCard(context, s)),
+                  ...sessions.map((s) => _buildSessionCard(context, ref, s)),
               ],
             ),
           );
@@ -149,7 +150,11 @@ class PlanDetailScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildSessionCard(BuildContext context, SessionDetails session) {
+  Widget _buildSessionCard(
+    BuildContext context,
+    WidgetRef ref,
+    SessionDetails session,
+  ) {
     const days = [
       'Domingo',
       'Segunda-feira',
@@ -199,6 +204,10 @@ class PlanDetailScreen extends ConsumerWidget {
                 separatorBuilder: (_, index) => const Divider(height: 1),
                 itemBuilder: (context, index) {
                   final ex = session.exercises[index];
+                  final canPlayMedia = ex.hasVideo ||
+                      (ex.catalogExerciseId != null &&
+                          ex.catalogExerciseId!.isNotEmpty) ||
+                      ex.videoUrl.isNotEmpty;
                   return ListTile(
                     leading: CircleAvatar(
                       backgroundColor: Colors.blue.withValues(alpha: 0.1),
@@ -217,8 +226,22 @@ class PlanDetailScreen extends ConsumerWidget {
                     subtitle: Text(
                       '${ex.sets} séries x ${ex.reps} rep. • ${ex.restSeconds}s recup.',
                     ),
-                    trailing: ex.videoUrl.isNotEmpty
-                        ? const Icon(Icons.play_circle_fill, color: Colors.blue)
+                    trailing: canPlayMedia
+                        ? IconButton(
+                            icon: const Icon(
+                              Icons.play_circle_fill,
+                              color: Colors.blue,
+                            ),
+                            tooltip: 'Ver demonstração',
+                            onPressed: () => showExerciseMediaDialog(
+                              context: context,
+                              ref: ref,
+                              exerciseName: ex.name,
+                              legacyExerciseId: ex.id,
+                              catalogExerciseId: ex.catalogExerciseId,
+                              fallbackVideoUrl: ex.videoUrl,
+                            ),
+                          )
                         : null,
                   );
                 },

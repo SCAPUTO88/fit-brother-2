@@ -107,10 +107,21 @@ class DashboardScreen extends ConsumerWidget {
                 'Meus Alunos',
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
               ),
-              OutlinedButton.icon(
-                onPressed: () => context.push('/catalog'),
-                icon: const Icon(Icons.menu_book),
-                label: const Text('Biblioteca de Exercícios'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () => context.push('/workout-builder'),
+                    icon: const Icon(Icons.layers),
+                    label: const Text('Workout Builder'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => context.push('/catalog'),
+                    icon: const Icon(Icons.menu_book),
+                    label: const Text('Biblioteca de Exercícios'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -223,6 +234,15 @@ class DashboardScreen extends ConsumerWidget {
               context.push('/workouts');
             },
           ),
+          if (!isStudent)
+            ListTile(
+              leading: const Icon(Icons.layers),
+              title: const Text('Workout Builder (Templates)'),
+              onTap: () {
+                Navigator.pop(context);
+                context.push('/workout-builder');
+              },
+            ),
           ListTile(
             leading: const Icon(Icons.menu_book),
             title: const Text('Biblioteca de Exercícios'),
